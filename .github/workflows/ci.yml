@@ -20,6 +20,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Compile Python modules
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: |
           python -m py_compile bot/main.py
           python -m py_compile bot/config.py
