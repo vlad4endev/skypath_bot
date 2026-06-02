@@ -1,0 +1,27 @@
+# Telegram Bot
+aiogram==3.13.0
+
+# Database
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Redis (FSM storage)
+redis==5.2.0
+
+# HTTP
+httpx==0.27.2
+aiohttp==3.11.10
+
+# Payment
+yookassa==3.1.0
+
+# Scheduler
+apscheduler==3.10.4
+
+# Config
+python-dotenv==1.0.1
+cachetools==5.5.0
+
+# Crypto payments (optional)
+# aiohttp-cors==0.7.0

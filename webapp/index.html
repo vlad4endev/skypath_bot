@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>SkyPath VPN</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --sky: #00c6ff;
+      --sky-dark: #0072ff;
+      --sky-glow: rgba(0, 198, 255, 0.25);
+      --bg: #0a0d14;
+      --surface: rgba(255,255,255,0.04);
+      --surface-hover: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.08);
+      --text: #e8edf7;
+      --muted: rgba(232,237,247,0.45);
+      --success: #00e5a0;
+      --danger: #ff4d6d;
+      --warning: #ffb347;
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Sora', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100dvh;
+      overflow-x: hidden;
+    }
+
+    /* Mesh background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,114,255,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 60% at 80% 80%, rgba(0,198,255,0.08) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app { position: relative; z-index: 1; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+
+    /* Header */
+    .header {
+      padding: 20px 20px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--sky-dark), var(--sky));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 0 20px var(--sky-glow);
+    }
+
+    .logo-text {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(90deg, var(--sky), #fff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .user-badge {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    /* Nav tabs */
+    .nav {
+      padding: 16px 20px 0;
+      display: flex;
+      gap: 8px;
+    }
+
+    .nav-btn {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--muted);
+      font-family: 'Sora', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .nav-btn.active {
+      background: linear-gradient(135deg, rgba(0,114,255,0.25), rgba(0,198,255,0.15));
+      border-color: rgba(0,198,255,0.3);
+      color: var(--sky);
+    }
+
+    /* Content sections */
+    .section { display: none; padding: 16px 20px 80px; }
+    .section.active { display: block; }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* Status badge */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status-badge.active { background: rgba(0,229,160,0.12); color: var(--success); border: 1px solid rgba(0,229,160,0.2); }
+    .status-badge.expired { background: rgba(255,77,109,0.12); color: var(--danger); border: 1px solid rgba(255,77,109,0.2); }
+    .status-badge.pending { background: rgba(255,179,71,0.12); color: var(--warning); border: 1px solid rgba(255,179,71,0.2); }
+
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Progress bar (days left) */
+    .progress-wrap { margin: 14px 0 8px; }
+    .progress-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--sky-dark), var(--sky));
+      border-radius: 2px;
+      transition: width 1s ease;
+      box-shadow: 0 0 8px rgba(0,198,255,0.5);
+    }
+
+    /* VPN Key block */
+    .key-block {
+      background: rgba(0,198,255,0.04);
+      border: 1px solid rgba(0,198,255,0.12);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      margin-top: 12px;
+    }
+
+    .key-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sky); margin-bottom: 6px; }
+    .key-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text);
+      word-break: break-all;
+      line-height: 1.5;
+    }
+
+    .copy-btn {
+      margin-top: 10px;
+      width: 100%;
+      padding: 10px;
+      background: rgba(0,198,255,0.1);
+      border: 1px solid rgba(0,198,255,0.2);
+      border-radius: var(--radius-sm);
+      color: var(--sky);
+      font-family: 'Sora', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .copy-btn:active { transform: scale(0.98); background: rgba(0,198,255,0.18); }
+
+    /* Stats row */
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 4px; }
+    .stat-item { text-align: center; }
+    .stat-num { font-size: 20px; font-weight: 700; }
+    .stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+    /* Plan cards */
+    .plan-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .plan-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(0,114,255,0.06), transparent);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .plan-card:active { transform: scale(0.99); }
+    .plan-card:active::before { opacity: 1; }
+
+    .plan-card.recommended {
+      border-color: rgba(0,198,255,0.3);
+      background: linear-gradient(135deg, rgba(0,114,255,0.08), rgba(0,198,255,0.04));
+    }
+
+    .rec-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: linear-gradient(90deg, var(--sky-dark), var(--sky));
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 10px;
+    }
+
+    .plan-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .plan-desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+    .plan-price { font-size: 22px; font-weight: 800; }
+    .plan-price span { font-size: 13px; font-weight: 400; color: var(--muted); }
+
+    .plan-features { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .feat-tag {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* Month selector */
+    .months-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .month-btn {
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+    .month-btn.selected {
+      border-color: rgba(0,198,255,0.4);
+      background: rgba(0,198,255,0.08);
+    }
+    .month-btn:active { transform: scale(0.97); }
+    .month-price { font-size: 16px; font-weight: 700; color: var(--text); }
+    .month-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .month-save { font-size: 10px; color: var(--success); margin-top: 2px; }
+
+    /* Primary button */
+    .btn-primary {
+      width: 100%;
+      padding: 15px;
+      background: linear-gradient(135deg, var(--sky-dark), var(--sky));
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      font-family: 'Sora', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 4px 20px rgba(0,114,255,0.35);
+      margin-top: 16px;
+    }
+    .btn-primary:active { transform: scale(0.99); box-shadow: 0 2px 10px rgba(0,114,255,0.2); }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
+    .empty .icon { font-size: 48px; margin-bottom: 16px; }
+    .empty p { font-size: 14px; line-height: 1.6; }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: rgba(0,229,160,0.12);
+      border: 1px solid rgba(0,229,160,0.3);
+      color: var(--success);
+      padding: 12px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 100;
+      transition: transform 0.3s ease;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* Loader */
+    .loader { display: flex; justify-content: center; padding: 40px; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--sky);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Divider */
+    .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+    /* Row */
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+    .info-row + .info-row { border-top: 1px solid var(--border); }
+    .info-key { font-size: 13px; color: var(--muted); }
+    .info-val { font-size: 13px; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header class="header">
+    <div class="logo">
+      <div class="logo-icon">🛡</div>
+      <span class="logo-text">SkyPath VPN</span>
+    </div>
+    <div class="user-badge" id="userBadge">...</div>
+  </header>
+
+  <nav class="nav">
+    <button class="nav-btn active" onclick="showTab('home')">🏠 Главная</button>
+    <button class="nav-btn" onclick="showTab('keys')">🔑 Ключи</button>
+    <button class="nav-btn" onclick="showTab('plans')">💎 Тарифы</button>
+  </nav>
+
+  <!-- HOME TAB -->
+  <section class="section active" id="tab-home">
+
+    <div id="homeContent">
+      <div class="loader"><div class="spinner"></div></div>
+    </div>
+
+  </section>
+
+  <!-- KEYS TAB -->
+  <section class="section" id="tab-keys">
+    <div id="keysContent">
+      <div class="loader"><div class="spinner"></div></div>
+    </div>
+  </section>
+
+  <!-- PLANS TAB -->
+  <section class="section" id="tab-plans">
+
+    <div id="plansContent">
+      <!-- Dynamic -->
+    </div>
+
+    <!-- Plan detail overlay -->
+    <div id="planDetail" style="display:none">
+      <button onclick="showPlansList()" style="background:none;border:none;color:var(--sky);font-family:Sora,sans-serif;font-size:14px;cursor:pointer;padding:4px 0;margin-bottom:12px">
+        ← Назад к тарифам
+      </button>
+      <div class="card">
+        <div id="planDetailContent"></div>
+
+        <div class="months-grid" id="monthsGrid"></div>
+
+        <button class="btn-primary" id="buyBtn" onclick="handleBuy()">
+          💳 Оплатить
+        </button>
+      </div>
+    </div>
+
+  </section>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    tg.setHeaderColor('#0a0d14');
+    tg.setBackgroundColor('#0a0d14');
+  }
+
+  const API_BASE = '/api';
+  const telegramId = tg?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('tg_id') || '0';
+  let userData = null;
+  let subData = null;
+  let selectedPlan = null;
+  let selectedMonths = 1;
+
+  // === PLANS DATA ===
+  const PLANS = {
+    FREE:  { name: '🆓 Пробный',  price: 0,   devices: 1,  gb: 5,    features: ['3 дня', '1 устройство', '5 ГБ'] },
+    BASIC: { name: '💎 Базовый',  prices: {1:250,2:450,3:650,6:1200,12:2000}, devices: 3, features: ['3 устройства', 'Безлимит', '5 серверов'] },
+    MULTI: { name: '🚀 Мульти',   prices: {1:350,2:650,3:900,6:1700,12:2800}, devices: 5, features: ['5 устройств', 'Безлимит', 'Все серверы'], rec: true },
+    SUPER: { name: '👑 Супер',    prices: {1:450,2:850,3:1200,6:2200,12:3500}, devices:10, features: ['10 устройств', 'Безлимит', 'Приоритет'] },
+  };
+
+  const MONTHS_LABELS = {1:'1 месяц',2:'2 месяца',3:'3 месяца',6:'6 месяцев',12:'Год'};
+
+  // === INIT ===
+  async function init() {
+    const user = tg?.initDataUnsafe?.user;
+    document.getElementById('userBadge').textContent = user?.first_name ? `@${user.username || user.first_name}` : `ID ${telegramId}`;
+
+    await loadHomeData();
+    renderPlans();
+  }
+
+  // === API ===
+  async function fetchUser() {
+    try {
+      const r = await fetch(`${API_BASE}/user/${telegramId}`);
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  }
+
+  async function fetchSubscription() {
+    try {
+      const r = await fetch(`${API_BASE}/subscription/${telegramId}`);
+      return r.ok ? await r.json() : null;
+    } catch { return null; }
+  }
+
+  // === HOME ===
+  async function loadHomeData() {
+    [userData, subData] = await Promise.all([fetchUser(), fetchSubscription()]);
+    renderHome();
+    renderKeys();
+  }
+
+  function renderHome() {
+    const el = document.getElementById('homeContent');
+
+    if (!subData || !subData.status) {
+      el.innerHTML = `
+        <div class="card">
+          <div class="empty">
+            <div class="icon">🛡</div>
+            <p>У тебя нет активной подписки.<br>Выбери тариф и получи VPN за минуту!</p>
+          </div>
+          <button class="btn-primary" onclick="showTab('plans')">🚀 Выбрать тариф</button>
+        </div>
+      `;
+      return;
+    }
+
+    const isActive = subData.status === 'АКТИВНА';
+    const badgeClass = isActive ? 'active' : (subData.status === 'ИСТЕКЛА' ? 'expired' : 'pending');
+    const daysLeft = subData.days_left || 0;
+    const totalDays = subData.months_paid ? subData.months_paid * 30 : 30;
+    const pct = Math.max(0, Math.min(100, (daysLeft / totalDays) * 100));
+    const expires = subData.expires_at ? new Date(subData.expires_at).toLocaleDateString('ru-RU') : '—';
+
+    el.innerHTML = `
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+          <div>
+            <div class="card-title">Статус подписки</div>
+            <div class="plan-name">${subData.plan || '—'}</div>
+          </div>
+          <span class="status-badge ${badgeClass}">
+            <span class="status-dot"></span>
+            ${subData.status}
+          </span>
+        </div>
+
+        ${isActive ? `
+        <div class="progress-wrap">
+          <div class="progress-label">
+            <span>Осталось <b>${daysLeft} дней</b></span>
+            <span>до ${expires}</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:${pct}%"></div>
+          </div>
+        </div>
+        ` : ''}
+
+        <div class="stats-row" style="margin-top:16px">
+          <div class="stat-item">
+            <div class="stat-num" style="color:var(--sky)">${daysLeft}</div>
+            <div class="stat-label">дней осталось</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" style="color:var(--success)">${subData.limit_ip || 1}</div>
+            <div class="stat-label">устройств</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-num" style="color:var(--warning)">${subData.months_paid || 0}</div>
+            <div class="stat-label">мес. оплачено</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Мои серверы</div>
+        ${['🇷🇺 Россия', '🇺🇸 США', '🇩🇪 Германия', '🇳🇱 Нидерланды', '🇰🇿 Казахстан'].map(s => `
+          <div class="info-row">
+            <span class="info-key">${s}</span>
+            <span class="info-val" style="color:var(--success)">● Онлайн</span>
+          </div>
+        `).join('')}
+      </div>
+
+      ${!isActive ? `<button class="btn-primary" onclick="showTab('plans')">🔄 Продлить подписку</button>` : ''}
+    `;
+  }
+
+  // === KEYS ===
+  function renderKeys() {
+    const el = document.getElementById('keysContent');
+
+    if (!subData || !subData.vpn_key) {
+      el.innerHTML = `
+        <div class="empty">
+          <div class="icon">🔑</div>
+          <p>VPN ключи появятся здесь после покупки подписки</p>
+        </div>
+        <button class="btn-primary" onclick="showTab('plans')">💎 Купить подписку</button>
+      `;
+      return;
+    }
+
+    const expires = subData.expires_at ? new Date(subData.expires_at).toLocaleDateString('ru-RU') : '—';
+
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-title">Активный ключ</div>
+        <div class="info-row">
+          <span class="info-key">Тариф</span>
+          <span class="info-val">${subData.plan || '—'}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Действует до</span>
+          <span class="info-val">${expires}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Устройств</span>
+          <span class="info-val">${subData.limit_ip || 1}</span>
+        </div>
+
+        <div class="key-block">
+          <div class="key-label">🔗 Ссылка для подключения</div>
+          <div class="key-value" id="vpnKey">${subData.vpn_key}</div>
+          <button class="copy-btn" onclick="copyKey()">📋 Скопировать ключ</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Как подключиться</div>
+        <div class="info-row">
+          <span class="info-key">📱 Android</span>
+          <span class="info-val" style="color:var(--sky)">v2rayNG</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">🍎 iPhone</span>
+          <span class="info-val" style="color:var(--sky)">Happ / V2Box</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">💻 Windows</span>
+          <span class="info-val" style="color:var(--sky)">Nekoray</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">🍎 macOS</span>
+          <span class="info-val" style="color:var(--sky)">V2Box</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function copyKey() {
+    const key = document.getElementById('vpnKey')?.textContent;
+    if (!key) return;
+    navigator.clipboard?.writeText(key).then(() => showToast('✅ Ключ скопирован!')).catch(() => {
+      // Fallback
+      const ta = document.createElement('textarea');
+      ta.value = key;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      showToast('✅ Ключ скопирован!');
+    });
+    tg?.HapticFeedback?.notificationOccurred('success');
+  }
+
+  // === PLANS ===
+  function renderPlans() {
+    const el = document.getElementById('plansContent');
+    let html = '';
+
+    for (const [key, plan] of Object.entries(PLANS)) {
+      const fromPrice = plan.prices ? Math.min(...Object.values(plan.prices)) : 0;
+      html += `
+        <div class="plan-card ${plan.rec ? 'recommended' : ''}" onclick="showPlanDetail('${key}')">
+          ${plan.rec ? '<span class="rec-badge">Топ</span>' : ''}
+          <div class="plan-name">${plan.name}</div>
+          <div class="plan-price">
+            ${plan.prices ? `${fromPrice}<span> руб/мес</span>` : `<span>Бесплатно</span>`}
+          </div>
+          <div class="plan-features">
+            ${plan.features.map(f => `<span class="feat-tag">${f}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    el.innerHTML = html;
+  }
+
+  function showPlanDetail(planKey) {
+    selectedPlan = planKey;
+    selectedMonths = 1;
+    const plan = PLANS[planKey];
+
+    document.getElementById('plansContent').style.display = 'none';
+    document.getElementById('planDetail').style.display = 'block';
+
+    const detail = document.getElementById('planDetailContent');
+    detail.innerHTML = `
+      <div style="margin-bottom:16px">
+        <div class="plan-name">${plan.name}</div>
+        <div class="plan-features" style="margin-top:8px">
+          ${plan.features.map(f => `<span class="feat-tag">✓ ${f}</span>`).join('')}
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Выбери срок:</div>
+    `;
+
+    if (!plan.prices) {
+      // Free
+      document.getElementById('monthsGrid').innerHTML = '';
+      document.getElementById('buyBtn').textContent = '🎁 Получить бесплатно';
+    } else {
+      const grid = document.getElementById('monthsGrid');
+      grid.innerHTML = Object.entries(plan.prices).map(([m, p]) => {
+        const base = plan.prices[1] * m;
+        const save = base - p;
+        return `
+          <div class="month-btn ${m == 1 ? 'selected' : ''}" id="month_${m}" onclick="selectMonth(${m}, ${p})">
+            <div class="month-price">${p} ₽</div>
+            <div class="month-label">${MONTHS_LABELS[m]}</div>
+            ${save > 0 ? `<div class="month-save">−${save}₽</div>` : ''}
+          </div>
+        `;
+      }).join('');
+
+      updateBuyBtn();
+    }
+
+    tg?.HapticFeedback?.selectionChanged();
+  }
+
+  function selectMonth(months, price) {
+    selectedMonths = months;
+    document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('selected'));
+    document.getElementById(`month_${months}`)?.classList.add('selected');
+    updateBuyBtn();
+    tg?.HapticFeedback?.selectionChanged();
+  }
+
+  function updateBuyBtn() {
+    const plan = PLANS[selectedPlan];
+    if (!plan?.prices) return;
+    const price = plan.prices[selectedMonths];
+    document.getElementById('buyBtn').textContent = `💳 Оплатить ${price} руб.`;
+  }
+
+  function showPlansList() {
+    document.getElementById('plansContent').style.display = 'block';
+    document.getElementById('planDetail').style.display = 'none';
+  }
+
+  async function handleBuy() {
+    const plan = PLANS[selectedPlan];
+    const price = plan.prices ? plan.prices[selectedMonths] : 0;
+
+    tg?.HapticFeedback?.impactOccurred('medium');
+
+    // Отправляем данные в бот
+    if (tg?.sendData) {
+      tg.sendData(JSON.stringify({
+        action: 'buy',
+        plan: selectedPlan,
+        months: selectedMonths,
+        price: price,
+        telegram_id: telegramId,
+      }));
+    } else {
+      // Fallback — открываем бота
+      window.open(`https://t.me/bot?start=buy_${selectedPlan}_${selectedMonths}`, '_blank');
+    }
+  }
+
+  // === TABS ===
+  function showTab(tab) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`tab-${tab}`)?.classList.add('active');
+    document.querySelector(`[onclick="showTab('${tab}')"]`)?.classList.add('active');
+    tg?.HapticFeedback?.selectionChanged();
+  }
+
+  // === TOAST ===
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2500);
+  }
+
+  init();
+</script>
+</body>
+</html>
