@@ -33,4 +33,6 @@ jobs:
         uses: docker/setup-compose-action@v1
 
       - name: Check compose file syntax
-        run: docker compose config --quiet
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
