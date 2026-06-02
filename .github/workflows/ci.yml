@@ -30,6 +30,7 @@ jobs:
           python -m py_compile database/models.py
 
       - name: Validate docker-compose
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq docker-compose-plugin
-          docker compose config --quiet
+        uses: docker/setup-compose-action@v1
+
+      - name: Check compose file syntax
+        run: docker compose config --quiet
