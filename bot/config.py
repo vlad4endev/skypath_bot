@@ -13,12 +13,14 @@ class Config:
     # Telegram
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     BOT_USERNAME: str = os.getenv("BOT_USERNAME", "SkyPathVPN_Bot")
+    BRAND_NAME: str = os.getenv("BRAND_NAME", "SKYFLOW VPN")
     ADMIN_IDS: list[int] = None  # заполняется в __post_init__
 
     # Server
     WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://your-domain.com")
     PORT: int = int(os.getenv("PORT", "8080"))
     MINI_APP_URL: str = os.getenv("MINI_APP_URL", "https://your-domain.com/app")
+    WELCOME_PHOTO_URL: str = os.getenv("WELCOME_PHOTO_URL", "")
 
     # Database (PostgreSQL)
     DB_URL: str = os.getenv(

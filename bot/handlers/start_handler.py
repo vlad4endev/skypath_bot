@@ -17,8 +17,21 @@ router = Router()
 logger = logging.getLogger(__name__)
 config = Config()
 
+_PLACEHOLDER_HOSTS = ("your-domain.com", "example.com", "localhost")
 
-def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
+
+def _is_valid_https_url(url: str | None) -> bool:
+    if not url or not url.startswith("https://"):
+        return False
+    host = url.split("/")[2].split(":")[0].lower()
+    return host not in _PLACEHOLDER_HOSTS
+
+
+def main_keyboard(
+    has_subscription: bool = False,
+    *,
+    include_webapp: bool | None = None,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     if has_subscription:
@@ -42,17 +55,52 @@ def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="❓ Поддержка", url=config.SUPPORT_URL),
         InlineKeyboardButton(text="📄 Инфо", callback_data="info"),
     )
-    builder.row(
-        InlineKeyboardButton(
-            text="🌐 Личный кабинет",
-            web_app=WebAppInfo(url=config.MINI_APP_URL),
+    if include_webapp is None:
+        include_webapp = _is_valid_https_url(config.MINI_APP_URL)
+    if include_webapp and _is_valid_https_url(config.MINI_APP_URL):
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🌐 {config.BRAND_NAME}",
+                web_app=WebAppInfo(url=config.MINI_APP_URL),
+            )
         )
-    )
     return builder.as_markup()
 
 
-WELCOME_TEXT = """
-👋 Добро пожаловать в <b>SkyPath VPN</b>!
+async def _send_welcome(
+    message: Message,
+    text: str,
+    kb: InlineKeyboardMarkup,
+    *,
+    has_subscription: bool = False,
+) -> None:
+    """Отправка приветствия: сначала текст (надёжно), фото — опционально."""
+    try:
+        await message.answer(text, reply_markup=kb)
+    except Exception as e:
+        logger.warning("Welcome with keyboard failed: %s", e)
+        try:
+            await message.answer(
+                text,
+                reply_markup=main_keyboard(
+                    has_subscription=has_subscription,
+                    include_webapp=False,
+                ),
+            )
+        except Exception as e2:
+            logger.error("Welcome fallback failed: %s", e2)
+            await message.answer(text)
+
+    photo_url = config.WELCOME_PHOTO_URL.strip()
+    if photo_url and _is_valid_https_url(photo_url):
+        try:
+            await message.answer_photo(photo=photo_url)
+        except Exception as e:
+            logger.warning("Welcome photo failed: %s", e)
+
+
+WELCOME_TEXT = f"""
+👋 Добро пожаловать в <b>{config.BRAND_NAME}</b>!
 
 🛡 Твой личный помощник для безопасного и свободного интернета.
 
@@ -112,15 +160,12 @@ async def cmd_start(message: Message, command: CommandObject):
 
     kb = main_keyboard(has_subscription=active_sub is not None)
 
-    # Пробуем отправить с фото, если нет — текст
-    try:
-        await message.answer_photo(
-            photo="https://disk.yandex.ru/i/bdf9VfFqRYeOEw",
-            caption=welcome,
-            reply_markup=kb,
-        )
-    except Exception:
-        await message.answer(welcome, reply_markup=kb)
+    await _send_welcome(
+        message,
+        welcome,
+        kb,
+        has_subscription=active_sub is not None,
+    )
 
 
 @router.callback_query(F.data == "main")
@@ -142,8 +187,8 @@ async def cb_main(call: CallbackQuery):
 
 @router.callback_query(F.data == "about")
 async def cb_about(call: CallbackQuery):
-    text = """
-😎 <b>О нас — SkyPath VPN</b>
+    text = f"""
+😎 <b>О нас — {config.BRAND_NAME}</b>
 
 Мы строим сервис, которому можно доверять.
 
@@ -174,8 +219,8 @@ async def cb_about(call: CallbackQuery):
 
 @router.callback_query(F.data == "info")
 async def cb_info(call: CallbackQuery):
-    text = """
-📄 <b>Информация о SkyPath VPN</b>
+    text = f"""
+📄 <b>Информация о {config.BRAND_NAME}</b>
 
 <b>Тарифы:</b>
 🆓 Пробный — 3 дня бесплатно, 1 устройство
