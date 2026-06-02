@@ -39,36 +39,26 @@
 ### 1. Клонируй и настрой
 
 ```bash
-git clone ...
+git clone https://github.com/vlad4endev/skypath_bot.git
 cd skypath_bot
-cp .env.example .env
-nano .env   # Заполни все переменные
+./scripts/bootstrap.sh
+nano .env   # BOT_TOKEN, YooKassa, 3X-UI, домен
 ```
 
-### 2. Запуск через Docker
+### 2. Деплой одной командой
 
 ```bash
-docker-compose up -d
+./scripts/deploy.sh
+./scripts/ssl.sh   # Let's Encrypt (нужен CERTBOT_EMAIL в .env)
 ```
 
-### 3. SSL сертификат
+Подробнее: [DEPLOY.md](DEPLOY.md)
 
-```bash
-# Сначала запусти nginx без SSL
-docker-compose up nginx -d
+### 3. Webhook
 
-# Получи сертификат
-docker-compose run --rm certbot certonly \
-  --webroot -w /var/www/certbot \
-  -d your-domain.com
+Бот сам ставит Telegram webhook при старте. В YooKassa укажи:
 
-# Раскомментируй SSL в nginx.conf и перезапусти
-docker-compose restart nginx
-```
-
-### 4. Webhook
-
-Бот автоматически устанавливает webhook при старте. Убедись что `WEBHOOK_BASE_URL` в .env указывает на твой домен с HTTPS.
+`https://<твой-домен>/yookassa/webhook`
 
 ---
 
@@ -79,6 +69,8 @@ docker-compose restart nginx
 | `BOT_TOKEN` | Токен от @BotFather |
 | `ADMIN_IDS` | Telegram ID администраторов (через запятую) |
 | `WEBHOOK_BASE_URL` | HTTPS домен сервера |
+| `NGINX_DOMAIN` | Домен без https:// (для nginx и SSL) |
+| `CERTBOT_EMAIL` | Email для Let's Encrypt |
 | `MINI_APP_URL` | URL Telegram Mini App |
 | `DB_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection string |

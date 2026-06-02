@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile Python modules
+        run: |
+          python -m py_compile bot/main.py
+          python -m py_compile bot/config.py
+          python -m py_compile bot/handlers/start_handler.py
+          python -m py_compile bot/handlers/payment_handler.py
+          python -m py_compile database/models.py
+
+      - name: Validate docker-compose
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq docker-compose-plugin
+          docker compose config --quiet
