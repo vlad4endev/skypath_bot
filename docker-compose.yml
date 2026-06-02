@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   # PostgreSQL — основная БД (вместо NocoDB)
   postgres:
@@ -100,4 +98,6 @@ volumes:
 
 networks:
   skypath_net:
+    # Фиксированное имя: nginx-proxy-manager часто подключён к этой сети
+    name: skypath_bot_skypath_net
     driver: bridge

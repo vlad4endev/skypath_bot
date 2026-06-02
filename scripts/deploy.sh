@@ -62,19 +62,44 @@ fi
 chmod +x scripts/*.sh
 echo -e "${GREEN}✓ Docker готов${NC}"
 
+if [ ! -f docker-compose.yml ]; then
+    echo -e "${RED}ОШИБКА: нет docker-compose.yml в $(pwd)${NC}"
+    echo "Выполни: git pull origin main"
+    exit 1
+fi
+
+require_service() {
+    local svc=$1
+    if ! docker compose config --services 2>/dev/null | grep -qx "$svc"; then
+        echo -e "${RED}ОШИБКА: в docker-compose.yml нет сервиса «${svc}»${NC}"
+        echo "Скорее всего файл устарел или изменён локально. Восстанови из git:"
+        echo "  git fetch origin && git checkout origin/main -- docker-compose.yml"
+        echo ""
+        echo "Текущие сервисы:"
+        docker compose config --services 2>/dev/null || true
+        exit 1
+    fi
+}
+
 set -a
 # shellcheck disable=SC1091
 source .env
 set +a
 
-docker compose down 2>/dev/null || true
+# Не делаем «compose down» — сеть skypath_net может быть занята nginx-proxy-manager
 rm -f docker-compose.override.yml
 
+for svc in postgres redis bot nginx; do
+    require_service "$svc"
+done
+
+echo -e "${GREEN}✓ docker-compose.yml OK${NC}"
+
 echo -e "${YELLOW}Собираем образы...${NC}"
-docker compose build
+docker compose build bot
 
 echo -e "${YELLOW}Запускаем postgres, redis, bot...${NC}"
-docker compose up -d postgres redis bot
+docker compose up -d --force-recreate postgres redis bot
 
 echo -e "${YELLOW}Ждём PostgreSQL...${NC}"
 for _ in $(seq 1 30); do
@@ -87,13 +112,21 @@ done
 echo -e "${YELLOW}Применяем миграции...${NC}"
 docker compose exec -T bot alembic upgrade head
 
-if has_ssl_cert; then
+uses_external_proxy() {
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -Eiq 'nginx.?proxy.?manager|npm'
+}
+
+if uses_external_proxy; then
+    echo -e "${YELLOW}Обнаружен Nginx Proxy Manager — встроенный nginx не запускаем${NC}"
+    echo -e "В NPM добавь прокси на ${GREEN}skypath_bot:8080${NC} (или ${GREEN}host:8080${NC})"
+    echo -e "Mini App static: ${GREEN}/var/www/webapp${NC} через NPM или отдельный location"
+elif has_ssl_cert; then
     echo -e "${YELLOW}SSL найден — nginx с HTTPS${NC}"
-    docker compose up -d nginx certbot
+    docker compose up -d --force-recreate nginx certbot
 else
     echo -e "${YELLOW}SSL нет — nginx только HTTP (затем: ./scripts/ssl.sh)${NC}"
     http_override
-    docker compose up -d nginx
+    docker compose up -d --force-recreate nginx
 fi
 
 echo ""
