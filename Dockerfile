@@ -1,25 +1,30 @@
-FROM python:3.12-slim
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Системные зависимости
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-# Зависимости Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY prisma ./prisma
+RUN npx prisma generate
 
-# Исходный код
-COPY bot/ ./bot/
-COPY database/ ./database/
-COPY alembic/ ./alembic/
-COPY alembic.ini .
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
 
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app
+FROM node:22-alpine AS runner
 
-EXPOSE 8080
+WORKDIR /app
+ENV NODE_ENV=production
 
-CMD ["python", "-m", "bot.main"]
+COPY package.json package-lock.json* ./
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+
+COPY prisma ./prisma
+RUN npx prisma generate
+
+COPY --from=builder /app/dist ./dist
+
+EXPOSE 3000
+
+CMD ["node", "dist/index.js"]

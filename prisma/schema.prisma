@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  AWAITING_PAYMENT
+  DISABLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  telegramId    BigInt         @unique @map("telegram_id")
+  username      String?
+  firstName     String?        @map("first_name")
+  lastName      String?        @map("last_name")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  subscriptions Subscription[]
+  payments      Payment[]
+
+  @@map("users")
+}
+
+model Server {
+  id            Int            @id @default(autoincrement())
+  name          String
+  baseUrl       String         @map("base_url")
+  adminPath     String         @map("admin_path")
+  username      String
+  password      String
+  inboundId     Int            @map("inbound_id")
+  isActive      Boolean        @default(true) @map("is_active")
+  region        String?
+  subscriptions Subscription[]
+
+  @@map("servers")
+}
+
+model Subscription {
+  id                  Int                @id @default(autoincrement())
+  userId              Int                @map("user_id")
+  serverId            Int                @map("server_id")
+  status              SubscriptionStatus @default(AWAITING_PAYMENT)
+  clientUuid          String?            @map("client_uuid")
+  subId               String?            @map("sub_id")
+  email               String?
+  expiresAt           DateTime?          @map("expires_at")
+  totalGb             Int                @default(0) @map("total_gb")
+  notified3Days       Boolean            @default(false) @map("notified_3_days")
+  notifiedExpiryDay   Boolean            @default(false) @map("notified_expiry_day")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  user                User               @relation(fields: [userId], references: [id])
+  server              Server             @relation(fields: [serverId], references: [id])
+  payments            Payment[]
+
+  @@index([userId])
+  @@index([status, expiresAt])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id             Int           @id @default(autoincrement())
+  userId         Int           @map("user_id")
+  subscriptionId Int?          @map("subscription_id")
+  orderId        String        @unique @map("order_id")
+  months         Int
+  amount         Int
+  status         PaymentStatus @default(PENDING)
+  paymentUrl     String?       @map("payment_url")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  paidAt         DateTime?     @map("paid_at")
+  user           User          @relation(fields: [userId], references: [id])
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId])
+  @@map("payments")
+}
