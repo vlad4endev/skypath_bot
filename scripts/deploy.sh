@@ -62,24 +62,57 @@ fi
 chmod +x scripts/*.sh
 echo -e "${GREEN}✓ Docker готов${NC}"
 
-if [ ! -f docker-compose.yml ]; then
-    echo -e "${RED}ОШИБКА: нет docker-compose.yml в $(pwd)${NC}"
-    echo "Выполни: git pull origin main"
-    exit 1
-fi
+compose_services() {
+    docker compose -f docker-compose.yml config --services 2>/dev/null
+}
 
-require_service() {
-    local svc=$1
-    if ! docker compose config --services 2>/dev/null | grep -qx "$svc"; then
-        echo -e "${RED}ОШИБКА: в docker-compose.yml нет сервиса «${svc}»${NC}"
-        echo "Скорее всего файл устарел или изменён локально. Восстанови из git:"
-        echo "  git fetch origin && git checkout origin/main -- docker-compose.yml"
-        echo ""
-        echo "Текущие сервисы:"
-        docker compose config --services 2>/dev/null || true
+has_compose_service() {
+    compose_services | grep -qx "$1"
+}
+
+restore_compose_file() {
+    echo -e "${YELLOW}Восстанавливаем docker-compose.yml...${NC}"
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        git fetch origin main 2>/dev/null || true
+        if git checkout origin/main -- docker-compose.yml 2>/dev/null; then
+            echo -e "${GREEN}✓ docker-compose.yml из git${NC}"
+            return 0
+        fi
+    fi
+    if curl -fsSL \
+        "https://raw.githubusercontent.com/vlad4endev/skypath_bot/main/docker-compose.yml" \
+        -o docker-compose.yml; then
+        echo -e "${GREEN}✓ docker-compose.yml с GitHub${NC}"
+        return 0
+    fi
+    return 1
+}
+
+ensure_compose_file() {
+    if [ ! -f docker-compose.yml ]; then
+        restore_compose_file || {
+            echo -e "${RED}ОШИБКА: нет docker-compose.yml${NC}"
+            exit 1
+        }
+    fi
+
+    if ! has_compose_service postgres; then
+        echo -e "${YELLOW}В docker-compose.yml нет postgres (файл битый или устарел)${NC}"
+        echo "Текущие сервисы: $(compose_services | tr '\n' ' ')"
+        restore_compose_file || true
+    fi
+
+    if ! has_compose_service postgres; then
+        echo -e "${RED}ОШИБКА: postgres всё ещё отсутствует${NC}"
+        echo "Проверь COMPOSE_FILE и override-файлы:"
+        echo "  ls -la docker-compose*.yml"
+        echo "  echo \"\$COMPOSE_FILE\""
+        echo "  head -20 docker-compose.yml"
         exit 1
     fi
 }
+
+ensure_compose_file
 
 set -a
 # shellcheck disable=SC1091
@@ -90,10 +123,13 @@ set +a
 rm -f docker-compose.override.yml
 
 for svc in postgres redis bot nginx; do
-    require_service "$svc"
+    if ! has_compose_service "$svc"; then
+        echo -e "${RED}ОШИБКА: нет сервиса «${svc}»${NC}"
+        exit 1
+    fi
 done
 
-echo -e "${GREEN}✓ docker-compose.yml OK${NC}"
+echo -e "${GREEN}✓ docker-compose.yml OK ($(compose_services | tr '\n' ' '))${NC}"
 
 echo -e "${YELLOW}Собираем образы...${NC}"
 docker compose build bot
