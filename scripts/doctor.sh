@@ -33,6 +33,10 @@ echo "--- порт 8080 / 8082 ---"
 ss -tlnp 2>/dev/null | grep -E ':8080|:8082' || netstat -tlnp 2>/dev/null | grep -E ':8080|:8082' || echo "не удалось проверить"
 echo ""
 
+echo "--- docker network ---"
+docker network inspect skypath_bot_skypath_net --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "сеть не найдена"
+echo ""
+
 echo "--- health ---"
 echo -n "8080: "; curl -s --max-time 2 http://127.0.0.1:8080/health 2>/dev/null || echo "нет ответа"
 echo -n "8082: "; curl -s --max-time 2 http://127.0.0.1:8082/health 2>/dev/null || echo "нет ответа"

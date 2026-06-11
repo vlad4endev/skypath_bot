@@ -99,6 +99,6 @@ volumes:
 
 networks:
   skypath_net:
-    # Фиксированное имя: nginx-proxy-manager часто подключён к этой сети
+    # external — compose не удаляет сеть (NPM часто подключён к ней)
     name: skypath_bot_skypath_net
-    driver: bridge
+    external: true

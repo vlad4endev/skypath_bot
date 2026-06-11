@@ -114,6 +114,24 @@ ensure_compose_file() {
 
 ensure_compose_file
 
+SKYPATH_NET=skypath_bot_skypath_net
+
+ensure_docker_network() {
+    if ! docker network inspect "$SKYPATH_NET" >/dev/null 2>&1; then
+        docker network create "$SKYPATH_NET"
+        echo -e "${GREEN}✓ Создана сеть ${SKYPATH_NET}${NC}"
+    fi
+    local npm
+    npm=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -Ei 'nginx.?proxy.?manager|^npm$' | head -1 || true)
+    if [ -n "$npm" ]; then
+        if docker network connect "$SKYPATH_NET" "$npm" 2>/dev/null; then
+            echo -e "${GREEN}✓ NPM (${npm}) подключён к ${SKYPATH_NET}${NC}"
+        fi
+    fi
+}
+
+ensure_docker_network
+
 set -a
 # shellcheck disable=SC1091
 source .env
@@ -135,7 +153,7 @@ echo -e "${YELLOW}Собираем образы...${NC}"
 docker compose build bot
 
 echo -e "${YELLOW}Запускаем postgres, redis, bot...${NC}"
-docker compose up -d --force-recreate postgres redis bot
+docker compose up -d postgres redis bot
 
 echo -e "${YELLOW}Ждём PostgreSQL...${NC}"
 for _ in $(seq 1 30); do
@@ -158,11 +176,11 @@ if uses_external_proxy; then
     echo -e "Проверка health: ${GREEN}curl -s http://127.0.0.1:8082/health${NC}"
 elif has_ssl_cert; then
     echo -e "${YELLOW}SSL найден — nginx с HTTPS${NC}"
-    docker compose up -d --force-recreate nginx certbot
+    docker compose up -d nginx certbot
 else
     echo -e "${YELLOW}SSL нет — nginx только HTTP (затем: ./scripts/ssl.sh)${NC}"
     http_override
-    docker compose up -d --force-recreate nginx
+    docker compose up -d nginx
 fi
 
 echo ""
