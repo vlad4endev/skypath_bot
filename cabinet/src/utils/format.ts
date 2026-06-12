@@ -1,7 +1,15 @@
-export function formatDate(iso: string | null | undefined): string {
+const LOCALE_MAP: Record<string, string> = {
+  ru: 'ru-RU',
+  en: 'en-US',
+  hi: 'hi-IN',
+  ar: 'ar-SA',
+};
+
+export function formatDate(iso: string | null | undefined, locale = 'ru'): string {
   if (!iso) return '—';
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
+    const intlLocale = LOCALE_MAP[locale] || 'en-US';
+    return new Intl.DateTimeFormat(intlLocale, {
       day: 'numeric',
       month: 'long',
       year: 'numeric',

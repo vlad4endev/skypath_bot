@@ -109,6 +109,25 @@ class UserRepo:
             user.is_marketing_lead = value
             await self.session.commit()
 
+    async def set_preferred_locale(self, user: User, locale: str) -> User:
+        from bot.i18n import normalize_locale
+
+        user.preferred_locale = normalize_locale(locale)
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
+    async def ensure_locale_from_telegram(self, user: User) -> User:
+        """Migrate existing users: infer locale from Telegram language_code once."""
+        if user.preferred_locale:
+            return user
+        from bot.i18n import map_telegram_language
+
+        user.preferred_locale = map_telegram_language(user.language_code)
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
+
 
 class SubscriptionRepo:
     def __init__(self, session: AsyncSession):

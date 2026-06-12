@@ -49,6 +49,9 @@ export interface DashboardUser {
 export interface DashboardData {
   brand_name: string;
   support_url: string;
+  locale?: string;
+  rtl?: boolean;
+  i18n?: I18nApiBundle;
   user: DashboardUser | null;
   has_subscription: boolean;
   is_new_vpn_user: boolean;
@@ -80,4 +83,14 @@ export interface AppConfig {
   support_url: string;
   bot_username: string;
   months_labels: Record<string, string>;
+  locale?: string;
+  i18n?: Record<string, unknown>;
+}
+
+export interface I18nApiBundle {
+  locale: string;
+  rtl: boolean;
+  cabinet?: Record<string, string>;
+  locale_labels?: Record<string, string>;
+  supported_locales?: string[];
 }

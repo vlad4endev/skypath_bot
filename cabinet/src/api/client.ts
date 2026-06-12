@@ -64,8 +64,18 @@ export const api = {
     request<{ ok: boolean }>('/cabinet/api/auth/logout', { method: 'POST' }),
 
   me: () =>
-    request<{ ok: boolean; brand: string; user: { full_name: string | null; email: string | null } }>(
-      '/cabinet/api/auth/me',
+    request<{
+      ok: boolean;
+      brand: string;
+      locale?: string;
+      i18n?: import('../types').I18nApiBundle;
+      user: { full_name: string | null; email: string | null };
+    }>('/cabinet/api/auth/me'),
+
+  setLocale: (locale: string) =>
+    request<{ ok: boolean; locale: string; i18n: import('../types').I18nApiBundle; message?: string }>(
+      '/cabinet/api/locale',
+      { method: 'POST', body: JSON.stringify({ locale }) },
     ),
 
   config: () => request<import('../types').AppConfig>('/cabinet/api/config'),

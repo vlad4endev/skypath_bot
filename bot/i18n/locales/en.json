@@ -1,0 +1,203 @@
+{
+  "months": {
+    "1": "1 month",
+    "2": "2 months",
+    "3": "3 months",
+    "6": "6 months",
+    "12": "12 months (year)"
+  },
+  "plans": {
+    "FREE": {
+      "name": "🆓 Trial",
+      "description": "3 days free, 1 device, 5 GB"
+    },
+    "BASIC": {
+      "name": "💎 Basic",
+      "description": "Up to 3 devices, unlimited traffic"
+    },
+    "MULTI": {
+      "name": "🚀 Multi",
+      "description": "Up to 5 devices, all locations"
+    },
+    "SUPER": {
+      "name": "👑 Super",
+      "description": "Up to 10 devices, priority, all locations"
+    }
+  },
+  "plan_features": {
+    "FREE": ["3 days free", "1 device", "5 GB traffic", "All servers"],
+    "BASIC": ["3 devices", "Unlimited traffic", "5 locations", "24/7 support"],
+    "MULTI": ["5 devices", "Unlimited traffic", "All servers", "Priority speed"],
+    "SUPER": ["10 devices", "Unlimited traffic", "All servers", "Maximum priority"]
+  },
+  "lang": {
+    "choose_title": "🌍 Choose your language",
+    "choose_desc": "Выберите язык · अपनी भाषा चुनें · اختر لغتك",
+    "saved": "✅ Language changed to {label}",
+    "settings_title": "Interface language",
+    "settings_desc": "Bot, notifications and app will use the selected language"
+  },
+  "menu": {
+    "cabinet": "👤 Personal account",
+    "buy_vpn": "💳 Buy VPN",
+    "my_keys": "🔑 My keys",
+    "account": "👤 Account",
+    "web_cabinet": "🌐 Web version",
+    "reviews": "💬 Reviews",
+    "about": "😎 About us",
+    "support": "❓ Support",
+    "info": "📄 Info",
+    "back": "⬅️ Back",
+    "subscribe": "💳 Subscribe",
+    "renew": "🔄 Renew",
+    "open_app": "📲 Open app",
+    "try_app": "📲 Try now",
+    "terms": "📄 Terms of service",
+    "privacy": "🔒 Privacy policy"
+  },
+  "welcome": {
+    "new": "👋 Welcome to <b>{brand}</b>!\n\n🛡 Your personal assistant for safe and free internet.\n\n<b>What you get:</b>\n• 🔒 Reliable data protection on any network\n• ⚡ Unlimited speed with no caps\n• 📺 YouTube in 4K, streaming without buffering\n• 📱 Up to 10 devices at once\n• 🌍 Servers: Russia, USA, Germany, Netherlands, Kazakhstan\n• 💰 Fair price — from 250 RUB/month\n\n📱 Plans, payment and account — in the app",
+    "new_trial": "\n\n🎁 <b>3 days free for you!</b> Open the app 👇",
+    "returning_sub": "👋 Welcome back, <b>{name}</b>!\n\n🔑 Your VPN is active — keys and settings in your account.\n\n📱 Manage subscription and devices in the app 👇",
+    "returning": "👋 Welcome back, <b>{name}</b>!\n\n📱 Plans, payment and account — in the app 👇",
+    "friend": "friend"
+  },
+  "about": {
+    "text": "😎 <b>About us — {brand}</b>\n\nWe build a service you can trust.\n\n<b>Secure connection:</b>\nWe use several modern VPN protocols that work together and adapt to your network.\n\n<b>What you get:</b>\n• Traffic encryption and data protection\n• Stable connection across networks and regions\n• High speed for streaming, messengers and work\n\n<b>Contacts:</b>\n• Support: @SkyPathsupport\n• Channel: @SkyPathVPN"
+  },
+  "info": {
+    "text": "📄 <b>About {brand}</b>\n\n<b>Plans:</b>\n🆓 Trial — 3 days free, 1 device\n💎 Basic — from 250 RUB/mo, 3 devices\n🚀 Multi — from 350 RUB/mo, 5 devices\n👑 Super — from 450 RUB/mo, 10 devices\n\n<b>All plans include:</b>\n✅ Unlimited traffic\n✅ All servers\n✅ 24/7 support\n✅ Guides for all platforms\n\n<b>Payment:</b>\n💳 Bank card (Platega)\n₿ Crypto (USDT, BTC, ETH)\n\n━━━━━━━━━━━━━━━━\n<b>📋 Documents</b>\nBy using the service, you accept the terms of service and privacy policy."
+  },
+  "reviews": {
+    "text": "💬 <b>User reviews</b>\n\n⭐️⭐️⭐️⭐️⭐️ <b>Max K.</b>\n«Been using for 8 months. YouTube flies, Netflix works. Great service!»\n\n⭐️⭐️⭐️⭐️⭐️ <b>Anna M.</b>\n«Set up in 5 minutes with the guide. Works on iPhone and MacBook»\n\n⭐️⭐️⭐️⭐️⭐️ <b>Dmitry P.</b>\n«Speed doesn't drop even in 4K. Recommend to everyone!»\n\n⭐️⭐️⭐️⭐️⭐️ <b>Olga N.</b>\n«Support replied in 10 minutes. Helped with setup. Thanks!»\n\n<i>Over 2000 happy customers 🚀</i>"
+  },
+  "account": {
+    "not_found": "Account not found",
+    "title": "👤 <b>My account</b>",
+    "member_since": "📅 Member since: {date}",
+    "days_left": "⏳ Remaining: <b>{days} days</b>",
+    "expires_today": "⚠️ <b>Subscription expires today!</b>",
+    "last_payment": "💳 Last payment: <b>{amount:.0f} ₽</b> ({months} mo., {date})"
+  },
+  "scheduler": {
+    "expiring_tomorrow_trial": "⏳ <b>Trial ends tomorrow</b> — but it's not over yet!\n\n📅 End date: <b>{date}</b>\n\nYou've tried {brand} — subscribe from <b>250 ₽/mo</b> and keep your internet free 🌍\n\nWithout payment access will close — but we'll keep your key on the server for <b>{grace_days} more days</b>.\nTap below — a couple of minutes and you're back ✨",
+    "expiring_tomorrow_paid": "🔔 Hey, a reminder!\n\nYour <b>{plan}</b> plan ends tomorrow — until <b>{date}</b>.\n\nRenew with one tap — no need to reconfigure VPN on phone, laptop and tablet 😉",
+    "expiring_today_trial": "🚨 <b>Last chance!</b>\n\nToday is the final day of trial access. Without a subscription, VPN will be disabled tonight.\n\nFrom <b>250 ₽/mo</b> — back online without borders.\nTap «Subscribe» — faster than making tea ☕️",
+    "expiring_today_paid": "⏰ <b>Tick-tock…</b>\n\nToday is the last day of your <b>{plan}</b>.\nAccess may disappear tomorrow morning — YouTube and your favorite shows don't deserve that 😅\n\nRenewal takes less than a minute, same key 🔄",
+    "expired_trial_label": "Trial access",
+    "expired": "💤 <b>{label} suspended</b>\n\nVPN is disabled — but you have <b>{grace_days} days</b> to return <b>with the same key</b> 🔄\n\nSubscribe and everything works again without reconfiguration.\nIn a week we'll remove the key from the server, but you'll stay with us — we'll send offers and news 📬",
+    "grace_0": "👋 Hey, it's {brand}!\n\nYour <b>{label}</b> was disabled yesterday, but your key is still waiting on the server.\n\n<b>{days_left} days</b> left — renew and VPN comes back in a minute, no new setup ✨",
+    "grace_1": "🌧 We miss you…\n\n<b>{label}</b> can still be restored — key is in place, <b>{days_left} days</b> left.\n\nYouTube, Instagram, favorite shows — one tap away 📱",
+    "grace_2": "⏳ Half of grace period gone!\n\n<b>{days_left} days</b> until key removal from server.\nThen you'll need to set up again — renew now and you're good 🔑",
+    "grace_3": "🚨 <b>Last day!</b>\n\nTomorrow we'll permanently remove the <b>{label}</b> key from the server.\nLast chance to return with the same connection — after that, only a new key.",
+    "grace_purged": "👋 We removed the VPN key from the server — subscription wasn't renewed.\n\nBut you're still with us! We'll occasionally send offers and specials 📬\nCome back anytime — tap the button below 💫",
+    "trial_label": "trial access"
+  },
+  "app": {
+    "nav_home": "Home",
+    "nav_keys": "Keys",
+    "nav_plans": "Plans",
+    "nav_support": "Support",
+    "nav_profile": "Profile",
+    "loading": "Loading…",
+    "no_subscription": "No active subscription",
+    "inactive": "Inactive",
+    "choose_plan_hint": "Choose a plan — key and connection appear right after payment.",
+    "choose_plan_btn": "Choose plan",
+    "renew_sub": "🔄 Renew subscription",
+    "link_not_ready": "Link not created yet. Tap the button below.",
+    "get_link": "🔑 Get subscription link",
+    "key_after_sub": "Key appears after subscribing",
+    "plans_loading": "Loading plans...",
+    "get_free": "🎁 Get free",
+    "pay": "💳 Pay {price} ₽",
+    "total": "Total:",
+    "promo_invalid": "Invalid promo code",
+    "promo_check_fail": "Could not verify promo code",
+    "discount": "Discount −{amount} ₽",
+    "copied": "✅ Copied!",
+    "payment_success": "✅ Payment successful!",
+    "payment_confirmed": "✅ Payment confirmed",
+    "payment_cancelled": "❌ Payment cancelled",
+    "payment_pending": "⏳ Payment processing. Refresh in a minute.",
+    "payment_failed": "❌ Payment not completed",
+    "payment_checking": "Checking payment…",
+    "connect_hint": "Tap «Connect» — subscription will be added to the app.",
+    "traffic": "traffic",
+    "unlimited_traffic": "♾ Unlimited traffic",
+    "used": "Used",
+    "limit": "Limit",
+    "remaining": "Remaining",
+    "upload": "Upload ↑",
+    "download": "Download ↓",
+    "online": "● Online",
+    "offline": "● Offline",
+    "web_cabinet": "Web cabinet",
+    "web_login_hint": "Set email and password for {host}",
+    "web_login": "Web login",
+    "web_new": "New",
+    "web_open": "Open",
+    "web_save": "Save for web login",
+    "web_saved": "✅ Web login credentials saved",
+    "password_min": "Password — at least 8 characters",
+    "password_mismatch": "Passwords don't match",
+    "email": "Email",
+    "password": "Password",
+    "password_confirm": "Confirm",
+    "days_left": "{days} days left",
+    "expires": "Until {date}",
+    "devices": "{count} dev.",
+    "language": "Language",
+    "support_title": "Support",
+    "support_desc": "We're here 24/7",
+    "support_btn": "Contact support",
+    "legal_terms": "Terms of service",
+    "legal_privacy": "Privacy policy"
+  },
+  "cabinet": {
+    "nav_home": "Home",
+    "nav_keys": "Keys",
+    "nav_plans": "Plans",
+    "nav_support": "Support",
+    "nav_language": "Language",
+    "logout": "Log out",
+    "user": "User",
+    "welcome": "Welcome",
+    "client_since": "Client since",
+    "referrals": "Referrals",
+    "loading": "Loading account…",
+    "load_error": "Load error",
+    "retry": "Retry",
+    "login_title": "Sign in",
+    "login_subtitle": "Email and password set in the app",
+    "email": "Email",
+    "password": "Password",
+    "login_btn": "Sign in",
+    "login_error": "Invalid email or password",
+    "auth_required": "Authorization required",
+    "payment_checking": "Checking payment…",
+    "payment_success": "✅ Payment successful!",
+    "payment_cancelled": "Payment cancelled",
+    "payment_pending": "Payment processing. Refresh the page in a minute.",
+    "payment_failed": "Payment not completed",
+    "close_menu": "Close menu",
+    "menu": "Menu",
+    "language_title": "Interface language",
+    "language_saved": "Language saved",
+    "subscription_active": "Subscription active",
+    "no_subscription": "No active subscription",
+    "days_left": "{days} days left",
+    "renew": "Renew",
+    "buy": "Buy VPN",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "keys_title": "VPN keys",
+    "plans_title": "Plans",
+    "support_title": "Help & support"
+  },
+  "errors": {
+    "generic": "An error occurred",
+    "not_found": "Not found",
+    "unauthorized": "Authorization required"
+  }
+}

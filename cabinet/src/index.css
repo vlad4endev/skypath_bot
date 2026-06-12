@@ -1199,3 +1199,33 @@ body::before {
 @media (min-width: 1024px) {
   .payment-banner { bottom: 24px; }
 }
+
+.lang-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.lang-btn {
+  padding: 14px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: start;
+}
+
+.lang-btn.active {
+  border-color: var(--accent);
+  background: rgba(138, 156, 254, 0.12);
+  color: var(--accent);
+}
+
+html[dir="rtl"] .sidebar-nav,
+html[dir="rtl"] .nav-link,
+html[dir="rtl"] .page-header {
+  direction: rtl;
+}

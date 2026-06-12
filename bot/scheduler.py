@@ -8,6 +8,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from bot.config import Config, PLANS
+from bot.i18n import get_user_locale, t
+from bot.i18n.plans import plan_display_name
 from database.engine import async_session
 from database.repository import SubscriptionRepo, PaymentRepo, UserRepo, ACTIVE_SUBSCRIPTION_STATUSES
 from database.models import Subscription, SubscriptionStatus, PlanType
@@ -37,67 +39,85 @@ def _is_trial_sub(sub: Subscription) -> bool:
     return sub.plan == PlanType.FREE or sub.status == SubscriptionStatus.FREE_TRIAL
 
 
-def _plan_label(sub: Subscription) -> str:
+def _plan_label(sub: Subscription, locale: str) -> str:
     key = sub.plan.value if sub.plan else "BASIC"
-    return PLANS.get(key, {}).get("name", key)
+    return plan_display_name(key, locale)
 
 
 def _expiry_date(sub: Subscription) -> str:
     return sub.expires_at.strftime("%d.%m.%Y") if sub.expires_at else "—"
 
 
-def _msg_expiring_tomorrow_trial(sub: Subscription) -> str:
-    return (
-        f"⏳ <b>Завтра гаснет пробный период</b> — но это ещё не конец!\n\n"
-        f"📅 Финиш: <b>{_expiry_date(sub)}</b>\n\n"
-        f"Ты уже попробовал {config.BRAND_NAME} — оформи подписку от <b>250 ₽/мес</b>, "
-        f"и интернет останется свободным 🌍\n\n"
-        f"Без оплаты доступ закроется — но ключ сохраним на сервере ещё <b>{GRACE_PERIOD_DAYS} дней</b>.\n"
-        f"Кнопка ниже — пара минут, и всё как было ✨"
+async def _locale_for_user(telegram_id: int) -> str:
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        user = await user_repo.get_by_telegram_id(telegram_id)
+    return get_user_locale(user)
+
+
+def _msg_expiring_tomorrow_trial(sub: Subscription, locale: str) -> str:
+    return t(
+        locale,
+        "scheduler.expiring_tomorrow_trial",
+        date=_expiry_date(sub),
+        brand=config.BRAND_NAME,
+        grace_days=GRACE_PERIOD_DAYS,
     )
 
 
-def _msg_expiring_tomorrow_paid(sub: Subscription) -> str:
-    return (
-        f"🔔 Эй, напоминалочка!\n\n"
-        f"Завтра заканчивается твой тариф <b>{_plan_label(sub)}</b> "
-        f"— до <b>{_expiry_date(sub)}</b>.\n\n"
-        f"Продли сейчас одним нажатием — и не придётся заново настраивать VPN "
-        f"на телефоне, ноуте и планшете 😉"
+def _msg_expiring_tomorrow_paid(sub: Subscription, locale: str) -> str:
+    return t(
+        locale,
+        "scheduler.expiring_tomorrow_paid",
+        plan=_plan_label(sub, locale),
+        date=_expiry_date(sub),
     )
 
 
-def _msg_expiring_today_trial(sub: Subscription) -> str:
-    return (
-        f"🚨 <b>Последний рубеж!</b>\n\n"
-        f"Сегодня — финальный день пробного доступа. "
-        f"Без подписки VPN отключится уже сегодня вечером.\n\n"
-        f"От <b>250 ₽/мес</b> — и ты снова в сети без границ.\n"
-        f"Жми «Оформить подписку» — это быстрее, чем заварить чай ☕️"
-    )
+def _msg_expiring_today_trial(sub: Subscription, locale: str) -> str:
+    return t(locale, "scheduler.expiring_today_trial")
 
 
-def _msg_expiring_today_paid(sub: Subscription) -> str:
-    return (
-        f"⏰ <b>Тик-так…</b>\n\n"
-        f"Сегодня последний день твоего <b>{_plan_label(sub)}</b>.\n"
-        f"Завтра утром доступ может пропасть — а YouTube и любимые сериалы "
-        f"этого точно не заслуживают 😅\n\n"
-        f"Продление займёт меньше минуты, ключ останется тот же 🔄"
-    )
+def _msg_expiring_today_paid(sub: Subscription, locale: str) -> str:
+    return t(locale, "scheduler.expiring_today_paid", plan=_plan_label(sub, locale))
 
 
-def _msg_subscription_expired(sub: Subscription) -> str:
+def _msg_subscription_expired(sub: Subscription, locale: str) -> str:
     is_trial = _is_trial_sub(sub)
-    label = "Пробный доступ" if is_trial else _plan_label(sub)
-    return (
-        f"💤 <b>{label} приостановлен</b>\n\n"
-        f"VPN отключён — но у тебя есть <b>{GRACE_PERIOD_DAYS} дней</b>, "
-        f"чтобы вернуться <b>с тем же ключом</b> 🔄\n\n"
-        f"Оформи подписку — и всё снова заработает без перенастройки.\n"
-        f"Через неделю ключ уберём с сервера, но ты останешься с нами — "
-        f"будем присылать акции и новости 📬"
+    label = t(locale, "scheduler.expired_trial_label") if is_trial else _plan_label(sub, locale)
+    return t(
+        locale,
+        "scheduler.expired",
+        label=label,
+        grace_days=GRACE_PERIOD_DAYS,
     )
+
+
+def _msg_grace_reminder(sub: Subscription, reminder_index: int, locale: str) -> str:
+    days_left = _grace_days_left(sub)
+    is_trial = _is_trial_sub(sub)
+    label = t(locale, "scheduler.trial_label") if is_trial else _plan_label(sub, locale)
+    key = f"scheduler.grace_{reminder_index}"
+    return t(locale, key, label=label, days_left=days_left, brand=config.BRAND_NAME)
+
+
+def _msg_grace_purged(locale: str) -> str:
+    return t(locale, "scheduler.grace_purged")
+
+
+def _renew_kb(is_trial: bool = False, locale: str = "ru"):
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    from bot.keyboards.webapp import cabinet_button, is_miniapp_available
+
+    builder = InlineKeyboardBuilder()
+    if is_miniapp_available():
+        label = t(locale, "menu.subscribe") if is_trial else t(locale, "menu.renew")
+        builder.row(cabinet_button(label, locale=locale))
+    builder.row(
+        InlineKeyboardButton(text=t(locale, "menu.support"), url=config.SUPPORT_URL),
+    )
+    return builder.as_markup()
 
 
 def _days_since_disabled(sub: Subscription) -> int:
@@ -111,61 +131,6 @@ def _grace_days_left(sub: Subscription) -> int:
         return GRACE_PERIOD_DAYS
     elapsed = _days_since_disabled(sub)
     return max(0, GRACE_PERIOD_DAYS - elapsed)
-
-
-def _msg_grace_reminder(sub: Subscription, reminder_index: int) -> str:
-    days_left = _grace_days_left(sub)
-    is_trial = _is_trial_sub(sub)
-    label = "пробный доступ" if is_trial else _plan_label(sub)
-
-    if reminder_index == 0:
-        return (
-            f"👋 Эй, это мы — {config.BRAND_NAME}!\n\n"
-            f"Вчера отключился твой <b>{label}</b>, но ключ ещё ждёт тебя на сервере.\n\n"
-            f"Осталось <b>{days_left} дн.</b> — продли, и VPN оживёт за минуту, "
-            f"без новой настройки ✨"
-        )
-    if reminder_index == 1:
-        return (
-            f"🌧 Скучаем без тебя…\n\n"
-            f"<b>{label}</b> всё ещё можно вернуть — ключ на месте, "
-            f"осталось <b>{days_left} дн.</b>\n\n"
-            f"YouTube, Instagram, любимые сериалы — всё это на расстоянии одного нажатия 📱"
-        )
-    if reminder_index == 2:
-        return (
-            f"⏳ Уже половина grace-периода!\n\n"
-            f"До удаления ключа с сервера — <b>{days_left} дн.</b>\n"
-            f"Потом придётся настраивать заново, а сейчас — просто продли и всё 🔑"
-        )
-    return (
-        f"🚨 <b>Последний день!</b>\n\n"
-        f"Завтра ключ <b>{label}</b> удалим с сервера окончательно.\n"
-        f"Это последний шанс вернуться с тем же подключением — дальше только новый ключ."
-    )
-
-
-def _msg_grace_purged() -> str:
-    return (
-        f"👋 Мы убрали VPN-ключ с сервера — подписка так и не была продлена.\n\n"
-        f"Но ты остаёшься с нами! Иногда будем присылать акции и спецпредложения 📬\n"
-        f"Вернуться можно в любой момент — жми кнопку ниже 💫"
-    )
-
-
-def _renew_kb(is_trial: bool = False):
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-    from aiogram.types import InlineKeyboardButton
-    from bot.keyboards.webapp import cabinet_button, is_miniapp_available
-
-    builder = InlineKeyboardBuilder()
-    if is_miniapp_available():
-        label = "💳 Оформить подписку" if is_trial else "🔄 Продлить"
-        builder.row(cabinet_button(label))
-    builder.row(
-        InlineKeyboardButton(text="❓ Поддержка", url=config.SUPPORT_URL),
-    )
-    return builder.as_markup()
 
 
 async def _user_has_paid_subscription(session, user_id: int, after: datetime | None = None) -> bool:
@@ -193,17 +158,18 @@ async def job_notify_expiring_tomorrow(bot: Bot):
 
         for sub in subs:
             try:
+                locale = await _locale_for_user(sub.telegram_id)
                 is_trial = _is_trial_sub(sub)
                 text = (
-                    _msg_expiring_tomorrow_trial(sub)
+                    _msg_expiring_tomorrow_trial(sub, locale)
                     if is_trial
-                    else _msg_expiring_tomorrow_paid(sub)
+                    else _msg_expiring_tomorrow_paid(sub, locale)
                 )
 
                 await bot.send_message(
                     chat_id=sub.telegram_id,
                     text=text,
-                    reply_markup=_renew_kb(is_trial=is_trial),
+                    reply_markup=_renew_kb(is_trial=is_trial, locale=locale),
                     parse_mode="HTML",
                 )
                 async with async_session() as session:
@@ -227,17 +193,18 @@ async def job_notify_expiring_today(bot: Bot):
 
         for sub in subs:
             try:
+                locale = await _locale_for_user(sub.telegram_id)
                 is_trial = _is_trial_sub(sub)
                 text = (
-                    _msg_expiring_today_trial(sub)
+                    _msg_expiring_today_trial(sub, locale)
                     if is_trial
-                    else _msg_expiring_today_paid(sub)
+                    else _msg_expiring_today_paid(sub, locale)
                 )
 
                 await bot.send_message(
                     chat_id=sub.telegram_id,
                     text=text,
-                    reply_markup=_renew_kb(is_trial=is_trial),
+                    reply_markup=_renew_kb(is_trial=is_trial, locale=locale),
                     parse_mode="HTML",
                 )
                 async with async_session() as session:
@@ -298,11 +265,12 @@ async def job_expire_subscriptions(bot: Bot):
                         await sub_repo.mark_vpn_disabled(s)
 
                 is_trial = _is_trial_sub(sub)
+                locale = await _locale_for_user(sub.telegram_id)
                 try:
                     await bot.send_message(
                         sub.telegram_id,
-                        _msg_subscription_expired(sub),
-                        reply_markup=_renew_kb(is_trial=is_trial),
+                        _msg_subscription_expired(sub, locale),
+                        reply_markup=_renew_kb(is_trial=is_trial, locale=locale),
                         parse_mode="HTML",
                     )
                 except Exception as e:
@@ -339,14 +307,15 @@ async def job_grace_period(bot: Bot):
                     continue
 
                 is_trial = _is_trial_sub(sub)
-                text = _msg_grace_reminder(sub, sent)
+                locale = await _locale_for_user(sub.telegram_id)
+                text = _msg_grace_reminder(sub, sent, locale)
                 if sent == len(GRACE_REMINDER_DAYS) - 1:
-                    await _purge_vpn_client(bot, sub, farewell_text=text)
+                    await _purge_vpn_client(bot, sub, farewell_text=text, locale=locale)
                 else:
                     await bot.send_message(
                         sub.telegram_id,
                         text,
-                        reply_markup=_renew_kb(is_trial=is_trial),
+                        reply_markup=_renew_kb(is_trial=is_trial, locale=locale),
                         parse_mode="HTML",
                     )
                     async with async_session() as session:
@@ -369,6 +338,7 @@ async def _purge_vpn_client(
     sub: Subscription,
     *,
     farewell_text: str | None = None,
+    locale: str | None = None,
 ) -> None:
     """Удалить клиента из 3X-UI, очистить VPN-поля, оставить user для рассылок."""
     if sub.vpn_uuid and sub.inbound_id:
@@ -392,11 +362,12 @@ async def _purge_vpn_client(
         await user_repo.set_marketing_lead(s.user_id, value=True)
 
     is_trial = _is_trial_sub(sub)
+    loc = locale or await _locale_for_user(sub.telegram_id)
     try:
         await bot.send_message(
             sub.telegram_id,
-            farewell_text or _msg_grace_purged(),
-            reply_markup=_renew_kb(is_trial=is_trial),
+            farewell_text or _msg_grace_purged(loc),
+            reply_markup=_renew_kb(is_trial=is_trial, locale=loc),
             parse_mode="HTML",
         )
     except Exception as e:

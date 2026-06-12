@@ -3,11 +3,13 @@ import { Navigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight } from 'lucide-react';
 import { ApiError, api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useI18n } from '../i18n/I18nContext';
 import { LoginPromo } from '../components/LoginPromo';
 import { Spinner } from '../components/ui';
 
 export function LoginPage() {
   const { authenticated, loading, login } = useAuth();
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -54,12 +56,12 @@ export function LoginPage() {
         <LoginPromo brand={brand} botUsername={botUsername} />
 
         <div className="login-card">
-          <h2>Вход в кабинет</h2>
-          <p className="login-hint">Email и пароль из регистрации в Telegram</p>
+          <h2>{t('login_title')}</h2>
+          <p className="login-hint">{t('login_subtitle')}</p>
 
           <form onSubmit={onSubmit} className="login-form">
             <label className="field">
-              <span>Email</span>
+              <span>{t('email')}</span>
               <div className="input-wrap">
                 <Mail size={18} className="input-icon" />
                 <input
@@ -75,7 +77,7 @@ export function LoginPage() {
             </label>
 
             <label className="field">
-              <span>Пароль</span>
+              <span>{t('password')}</span>
               <div className="input-wrap">
                 <Lock size={18} className="input-icon" />
                 <input
@@ -92,9 +94,9 @@ export function LoginPage() {
             {error && <p className="form-error">{error}</p>}
 
             <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
-              {submitting ? 'Вход…' : (
+              {submitting ? '…' : (
                 <>
-                  Войти
+                  {t('login_btn')}
                   <ArrowRight size={18} />
                 </>
               )}

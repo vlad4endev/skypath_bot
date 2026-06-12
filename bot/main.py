@@ -25,6 +25,7 @@ from bot.handlers import (
     admin_handler,
     miniapp_handler,
     referral_handler,
+    locale_handler,
 )
 from bot.middlewares.throttle import ThrottlingMiddleware
 from bot.middlewares.user import UserMiddleware
@@ -103,6 +104,7 @@ def create_app(config: Config) -> web.Application:
     dp.message.middleware(UserMiddleware())
     dp.callback_query.middleware(UserMiddleware())
 
+    dp.include_router(locale_handler.router)
     dp.include_router(start_handler.router)
     dp.include_router(account_handler.router)
     dp.include_router(subscription_handler.router)
@@ -182,6 +184,8 @@ def create_app(config: Config) -> web.Application:
     setup_application(app, dp, bot=bot)
 
     app.router.add_get("/api/config", miniapp_handler.get_config)
+    app.router.add_get("/api/i18n/{locale}", miniapp_handler.get_i18n)
+    app.router.add_post("/api/locale", miniapp_handler.set_locale)
     app.router.add_get("/api/plans", miniapp_handler.get_plans)
     app.router.add_get("/api/user/{telegram_id}", miniapp_handler.get_user_info)
     app.router.add_get("/api/subscription/{telegram_id}", miniapp_handler.get_subscription)
@@ -217,7 +221,7 @@ def create_app(config: Config) -> web.Application:
         if webapp_install.is_file():
             app.router.add_get("/app/install.html", _serve_webapp_install)
 
-        for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest"):
+        for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest", "i18n.js"):
             static_path = webapp_dir / static_name
             if static_path.is_file():
 

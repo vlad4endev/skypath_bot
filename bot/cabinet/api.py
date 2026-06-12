@@ -11,6 +11,8 @@ from aiohttp import web
 from bot.cabinet.auth import CabinetAuth
 from bot.config import Config, PLANS, MONTHS_LABELS
 from bot.handlers import miniapp_handler
+from bot.i18n import SUPPORTED_LOCALES, get_user_locale, normalize_locale, t
+from bot.i18n.plans import i18n_bundle, months_labels
 from bot.services.discount_service import calculate_discount, preview_discounts_for_plan
 from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
 from bot.services.payment_processor import process_manual_check
@@ -153,9 +155,14 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
     @require_user
     async def me(request: web.Request) -> web.Response:
         user: User = request["cabinet_user"]
+        locale = get_user_locale(user)
         return _json({
             "ok": True,
             "brand": config.BRAND_NAME,
+            "locale": locale,
+            "preferred_locale": user.preferred_locale,
+            "rtl": locale == "ar",
+            "i18n": i18n_bundle(locale),
             "user": {
                 "full_name": user.full_name,
                 "email": user.web_email,
@@ -168,19 +175,25 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
     async def health(_request: web.Request) -> web.Response:
         return _json({"status": "ok"})
 
-    async def get_config(_request: web.Request) -> web.Response:
+    async def get_config(request: web.Request) -> web.Response:
+        locale = normalize_locale(request.query.get("lang") or request.query.get("locale"))
         return _json({
             "brand_name": config.BRAND_NAME,
             "support_url": config.SUPPORT_URL,
             "bot_username": config.BOT_USERNAME,
-            "months_labels": MONTHS_LABELS,
+            "months_labels": months_labels(locale),
+            "locale": locale,
+            "i18n": i18n_bundle(locale),
         })
 
     @require_user
-    async def get_plans(_request: web.Request) -> web.Response:
+    async def get_plans(request: web.Request) -> web.Response:
+        user: User = request["cabinet_user"]
+        locale = get_user_locale(user)
         return _json({
-            "plans": miniapp_handler._serialize_plans(),
-            "months_labels": MONTHS_LABELS,
+            "plans": miniapp_handler._serialize_plans(locale),
+            "months_labels": months_labels(locale),
+            "locale": locale,
         })
 
     @require_user
@@ -198,6 +211,8 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
         has_subscription = sub is not None and miniapp_handler._is_subscription_live(sub)
         is_new_vpn_user = _is_new_vpn_user(all_subs)
 
+        locale = get_user_locale(user)
+
         traffic = None
         plan_info = None
         subscription_data = None
@@ -206,14 +221,18 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             if sub.vpn_email:
                 traffic = await miniapp_handler.xui.get_client_traffic(sub.vpn_email)
             plan_key = sub.plan.value if sub.plan else None
-            plan_info = miniapp_handler._serialize_plans().get(plan_key) if plan_key else None
+            plan_info = miniapp_handler._serialize_plans(locale).get(plan_key) if plan_key else None
             subscription_data = miniapp_handler._serialize_subscription(
-                sub, traffic=traffic, plan_info=plan_info
+                sub, traffic=traffic, plan_info=plan_info, locale=locale,
             )
 
         return _json({
             "brand_name": config.BRAND_NAME,
             "support_url": config.SUPPORT_URL,
+            "locale": locale,
+            "preferred_locale": user.preferred_locale,
+            "rtl": locale == "ar",
+            "i18n": i18n_bundle(locale),
             "user": {
                 "telegram_id": telegram_id,
                 "full_name": user.full_name,
@@ -226,7 +245,29 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             "is_new_vpn_user": is_new_vpn_user,
             "web_registered": user.web_registered,
             "subscription": subscription_data,
-            "plans": miniapp_handler._serialize_plans() if not has_subscription else None,
+            "plans": miniapp_handler._serialize_plans(locale) if not has_subscription else None,
+        })
+
+    @require_user
+    async def set_locale(request: web.Request) -> web.Response:
+        user: User = request["cabinet_user"]
+        body = await _body(request)
+        locale = normalize_locale(body.get("locale", ""))
+        if locale not in SUPPORTED_LOCALES:
+            return _error("Unsupported locale", 400, code="unsupported_locale")
+
+        async with async_session() as session:
+            user_repo = UserRepo(session)
+            db_user = await user_repo.get_by_id(user.id)
+            if not db_user:
+                return _error("User not found", 404)
+            await user_repo.set_preferred_locale(db_user, locale)
+
+        return _json({
+            "ok": True,
+            "locale": locale,
+            "i18n": i18n_bundle(locale),
+            "message": t(locale, "cabinet.language_saved"),
         })
 
     @require_user
@@ -412,6 +453,7 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
     app.router.add_get("/cabinet/api/config", get_config)
     app.router.add_get("/cabinet/api/plans", get_plans)
     app.router.add_get("/cabinet/api/dashboard", get_dashboard)
+    app.router.add_post("/cabinet/api/locale", set_locale)
     app.router.add_post("/cabinet/api/pay", create_payment)
     app.router.add_get("/cabinet/api/discount/preview", preview_discount)
     app.router.add_post("/cabinet/api/promo/validate", validate_promo)

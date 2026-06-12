@@ -46,6 +46,7 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(128))
     last_name: Mapped[str | None] = mapped_column(String(128))
     language_code: Mapped[str | None] = mapped_column(String(8))
+    preferred_locale: Mapped[str | None] = mapped_column(String(5))
     is_bot: Mapped[bool] = mapped_column(Boolean, default=False)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     referrer_id: Mapped[int | None] = mapped_column(BigInteger)

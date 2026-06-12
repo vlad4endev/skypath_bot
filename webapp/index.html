@@ -594,6 +594,17 @@
     .nav-item .nav-icon { font-size: 22px; line-height: 1; }
     .nav-item.active { color: var(--accent); }
 
+    .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .lang-btn {
+      padding: 12px 10px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .lang-btn.active {
+      border-color: var(--accent); background: var(--surface-2); color: var(--accent);
+    }
+    html[dir="rtl"] .sidebar-nav, html[dir="rtl"] .info-row { direction: rtl; }
+
     /* Loader & empty */
     .loader { display: flex; justify-content: center; padding: 48px; }
     .spinner {
@@ -890,6 +901,7 @@
   </defs>
 </svg>
 
+<script src="/app/i18n.js"></script>
 <script>
   const tg = window.Telegram?.WebApp;
   if (tg) {
@@ -901,6 +913,11 @@
 
   const API = '/api';
   const telegramId = tg?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('tg_id') || '0';
+  window.telegramId = telegramId;
+
+  function tr(key, params) {
+    return (window.I18n && I18n.t(key, params)) || key;
+  }
 
   let dashboard = null;
   let plansData = {};
@@ -1073,6 +1090,7 @@
         supportUrl = dashboard.support_url || supportUrl;
         cabinetUrl = dashboard.cabinet_url || cabinetUrl;
         if (dashboard.plans) plansData = dashboard.plans;
+        if (dashboard.i18n) I18n.applyBundle(dashboard.i18n);
         return;
       }
     } catch { /* offline */ }
@@ -1087,6 +1105,7 @@
       supportUrl = cfg.support_url || supportUrl;
       cabinetUrl = cfg.cabinet_url || cabinetUrl;
       monthsLabels = cfg.months_labels || {};
+      if (cfg.i18n) I18n.applyBundle(cfg.i18n);
     }
     if (plansR?.ok) {
       const p = await plansR.json();
@@ -1112,7 +1131,8 @@
 
   function formatDate(iso) {
     if (!iso) return '—';
-    return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+    const loc = I18n.locale === 'ru' ? 'ru-RU' : I18n.locale === 'ar' ? 'ar-SA' : I18n.locale === 'hi' ? 'hi-IN' : 'en-US';
+    return new Date(iso).toLocaleDateString(loc, { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
   function formatGb(gb) {
@@ -1133,7 +1153,7 @@
         </svg>
         <div class="ring-center">
           <div class="ring-pct">${pct}%</div>
-          <div class="ring-label">трафик</div>
+          <div class="ring-label">${tr('traffic')}</div>
         </div>
       </div>`;
   }
@@ -1142,19 +1162,19 @@
     if (!traffic) {
       const unlimited = !trafficGb || trafficGb === 0;
       if (unlimited) {
-        return `<div class="traffic-card"><div class="unlimited-tag">♾ Безлимитный трафик</div></div>`;
+        return `<div class="traffic-card"><div class="unlimited-tag">${tr('unlimited_traffic')}</div></div>`;
       }
-      return `<div class="traffic-card"><div class="traffic-info"><div class="traffic-row"><span>Лимит</span><span>${trafficGb} ГБ</span></div></div></div>`;
+      return `<div class="traffic-card"><div class="traffic-info"><div class="traffic-row"><span>${tr('limit')}</span><span>${trafficGb} GB</span></div></div></div>`;
     }
 
     if (traffic.unlimited) {
       return `
         <div class="traffic-card">
-          <div class="unlimited-tag">♾ Безлимитный трафик</div>
+          <div class="unlimited-tag">${tr('unlimited_traffic')}</div>
           <div class="traffic-info" style="margin-top:8px">
-            <div class="traffic-row"><span>Использовано</span><span>${formatGb(traffic.used_gb)}</span></div>
-            <div class="traffic-row"><span>Загрузка ↑</span><span>${formatGb(traffic.up_bytes / (1024**3))}</span></div>
-            <div class="traffic-row"><span>Скачивание ↓</span><span>${formatGb(traffic.down_bytes / (1024**3))}</span></div>
+            <div class="traffic-row"><span>${tr('used')}</span><span>${formatGb(traffic.used_gb)}</span></div>
+            <div class="traffic-row"><span>${tr('upload')}</span><span>${formatGb(traffic.up_bytes / (1024**3))}</span></div>
+            <div class="traffic-row"><span>${tr('download')}</span><span>${formatGb(traffic.down_bytes / (1024**3))}</span></div>
           </div>
         </div>`;
     }
@@ -1164,9 +1184,9 @@
       <div class="traffic-card">
         ${trafficRing(pct)}
         <div class="traffic-info">
-          <div class="traffic-row"><span>Использовано</span><span>${formatGb(traffic.used_gb)}</span></div>
-          <div class="traffic-row"><span>Лимит</span><span>${formatGb(traffic.limit_gb)}</span></div>
-          <div class="traffic-row"><span>Осталось</span><span>${formatGb(Math.max(0, traffic.limit_gb - traffic.used_gb))}</span></div>
+          <div class="traffic-row"><span>${tr('used')}</span><span>${formatGb(traffic.used_gb)}</span></div>
+          <div class="traffic-row"><span>${tr('limit')}</span><span>${formatGb(traffic.limit_gb)}</span></div>
+          <div class="traffic-row"><span>${tr('remaining')}</span><span>${formatGb(Math.max(0, traffic.limit_gb - traffic.used_gb))}</span></div>
         </div>
       </div>`;
   }
@@ -1176,8 +1196,8 @@
     return servers.map(s => {
       let statusClass = 'server-unknown';
       let statusText = '—';
-      if (s.online === true) { statusClass = 'server-online'; statusText = '● Онлайн'; }
-      else if (s.online === false) { statusClass = 'server-offline'; statusText = '● Офлайн'; }
+      if (s.online === true) { statusClass = 'server-online'; statusText = tr('online'); }
+      else if (s.online === false) { statusClass = 'server-offline'; statusText = tr('offline'); }
       return `<div class="server-row"><span>${s.name}</span><span class="${statusClass}">${statusText}</span></div>`;
     }).join('');
   }
@@ -1197,10 +1217,10 @@
           <div class="web-access-head">
             <div class="web-access-icon">✓</div>
             <div class="web-access-copy">
-              <div class="web-access-title">Веб-кабинет</div>
+              <div class="web-access-title">${tr('web_cabinet')}</div>
               <div class="web-access-desc">${escapeHtml(email)} · вход с компьютера</div>
             </div>
-            <button type="button" class="web-access-link" onclick="openCabinet()">Открыть</button>
+            <button type="button" class="web-access-link" onclick="openCabinet()">${tr('web_open')}</button>
           </div>
         </div>`;
     }
@@ -1212,21 +1232,21 @@
         <div class="web-access-head">
           <div class="web-access-icon">🌐</div>
           <div class="web-access-copy">
-            <div class="web-access-title">Вход в веб-версию</div>
-            <div class="web-access-desc">Задайте email и пароль для ${escapeHtml(host)}</div>
+            <div class="web-access-title">${tr('web_login')}</div>
+            <div class="web-access-desc">${tr('web_login_hint', { host: escapeHtml(host) })}</div>
           </div>
-          <span class="brand-pill web-access-badge">Новое</span>
+          <span class="brand-pill web-access-badge">${tr('web_new')}</span>
         </div>
         <form class="web-access-form" onsubmit="submitRegistration(event)">
           <div class="web-access-fields">
-            <input id="webAccessEmail" type="email" inputmode="email" autocomplete="email" placeholder="Email" required />
+            <input id="webAccessEmail" type="email" inputmode="email" autocomplete="email" placeholder="${tr('email')}" required />
             <div class="web-access-pass-row">
-              <input id="webAccessPassword" type="password" autocomplete="new-password" placeholder="Пароль" minlength="8" required />
-              <input id="webAccessPasswordConfirm" type="password" autocomplete="new-password" placeholder="Повтор" minlength="8" required />
+              <input id="webAccessPassword" type="password" autocomplete="new-password" placeholder="${tr('password')}" minlength="8" required />
+              <input id="webAccessPasswordConfirm" type="password" autocomplete="new-password" placeholder="${tr('password_confirm')}" minlength="8" required />
             </div>
           </div>
           <p class="web-access-error hidden" id="webAccessError"></p>
-          <button type="submit" class="btn btn-primary web-access-btn" id="webAccessBtn">Сохранить для веб-входа</button>
+          <button type="submit" class="btn btn-primary web-access-btn" id="webAccessBtn">${tr('web_save')}</button>
         </form>
       </div>`;
   }
@@ -1252,7 +1272,7 @@
       ${renderWebAccessCard()}
       ${renderSubscriptionBlock(sub)}
       ${renderConnectButtons(link)}
-      <button class="btn btn-ghost" onclick="showTab('plans')">🔄 Продлить подписку</button>
+      <button class="btn btn-ghost" onclick="showTab('plans')">${tr('renew_sub')}</button>
     `;
   }
 
@@ -1263,12 +1283,12 @@
       ${renderWebAccessCard()}
       <div class="card">
         <div class="sub-card-head">
-          <div class="sub-plan-name">Нет активной подписки</div>
-          <span class="status-badge expired"><span class="status-dot"></span>Не активна</span>
+          <div class="sub-plan-name">${tr('no_subscription')}</div>
+          <span class="status-badge expired"><span class="status-dot"></span>${tr('inactive')}</span>
         </div>
-        <p class="sub-meta">Выберите тариф — ключ и подключение появятся сразу после оплаты.</p>
+        <p class="sub-meta">${tr('choose_plan_hint')}</p>
       </div>
-      <button class="btn btn-primary" onclick="showTab('plans')">Выбрать тариф</button>
+      <button class="btn btn-primary" onclick="showTab('plans')">${tr('choose_plan_btn')}</button>
     `;
   }
 
@@ -1288,15 +1308,15 @@
           ${renderProfileHeader(user)}
           ${renderSubscriptionBlock(sub)}
           <div class="empty" style="padding:24px 0">
-            <p>Ссылка ещё не создана. Нажми кнопку ниже.</p>
+            <p>${tr('link_not_ready')}</p>
           </div>
-          <button class="btn btn-primary" id="provisionBtn" onclick="provisionVpn()">🔑 Получить ссылку подписки</button>`;
+          <button class="btn btn-primary" id="provisionBtn" onclick="provisionVpn()">${tr('get_link')}</button>`;
         return;
       }
       el.innerHTML = `
         ${renderProfileHeader(user)}
         <div class="empty" style="padding:24px 0">
-          <p>Ключ появится после оформления подписки</p>
+          <p>${tr('key_after_sub')}</p>
         </div>
         <button class="btn btn-primary" onclick="showTab('plans')">💎 Выбрать тариф</button>`;
       return;
@@ -1344,7 +1364,7 @@
         </div>`;
     }
 
-    el.innerHTML = html || '<div class="empty"><p>Тарифы загружаются...</p></div>';
+    el.innerHTML = html || `<div class="empty"><p>${tr('plans_loading')}</p></div>`;
   }
 
   function showPlanDetail(planKey) {
@@ -1372,7 +1392,7 @@
 
     if (!plan.prices) {
       grid.innerHTML = '';
-      buyBtn.textContent = '🎁 Получить бесплатно';
+      buyBtn.textContent = tr('get_free');
       promoBlock.classList.add('hidden');
     } else {
       promoBlock.classList.remove('hidden');
@@ -1504,7 +1524,7 @@
     } else {
       info.classList.add('hidden');
     }
-    btn.textContent = `💳 Оплатить ${finalPrice} ₽`;
+    btn.textContent = tr('pay', { price: finalPrice });
   }
 
   async function handleBuy() {
@@ -1654,7 +1674,7 @@
 
   function copyText(text) {
     if (!text) return;
-    const done = () => { showToast('✅ Скопировано!'); tg?.HapticFeedback?.notificationOccurred('success'); };
+    const done = () => { showToast(tr('copied')); tg?.HapticFeedback?.notificationOccurred('success'); };
     navigator.clipboard?.writeText(text).then(done).catch(() => {
       const ta = document.createElement('textarea');
       ta.value = text; document.body.appendChild(ta);
@@ -1735,7 +1755,7 @@
     lastSuccessLink = url || '';
     document.getElementById('successLink').textContent = url || '';
     document.getElementById('successMessage').textContent =
-      message || 'Нажми «Подключить» — подписка добавится в приложение.';
+      message || tr('connect_hint');
     const connectHost = document.getElementById('successConnectBtns');
     if (connectHost) {
       connectHost.innerHTML = url ? renderConnectButtons(url) : '';
@@ -1782,11 +1802,11 @@
 
     setWebAccessError('');
     if (password.length < 8) {
-      setWebAccessError('Пароль — минимум 8 символов');
+      setWebAccessError(tr('password_min'));
       return;
     }
     if (password !== passwordConfirm) {
-      setWebAccessError('Пароли не совпадают');
+      setWebAccessError(tr('password_mismatch'));
       return;
     }
 
@@ -1816,7 +1836,7 @@
       dashboard.needs_registration = false;
       dashboard.web_registered = true;
       if (dashboard.user) dashboard.user.web_email = data.web_email || email;
-      showToast('✅ Данные для веб-входа сохранены');
+      showToast('✅ ' + tr('web_saved'));
       tg?.HapticFeedback?.notificationOccurred('success');
       await refresh();
     } catch (e) {

@@ -6,6 +6,8 @@ from aiohttp import web
 from aiogram import Router
 
 from bot.config import Config, PLANS, MONTHS_LABELS
+from bot.i18n import SUPPORTED_LOCALES, get_user_locale, normalize_locale, t
+from bot.i18n.plans import i18n_bundle, months_labels, plan_display_name, serialize_plans
 from bot.services.discount_service import calculate_discount, preview_discounts_for_plan
 from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
 from bot.services.payment_processor import process_manual_check
@@ -38,60 +40,81 @@ xui = XUIClient(
 
 ACTIVE_STATUSES = {SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL}
 
-PLAN_FEATURES = {
-    "FREE": ["3 дня бесплатно", "1 устройство", "5 ГБ трафика", "Все серверы"],
-    "BASIC": ["3 устройства", "Безлимитный трафик", "5 локаций", "Поддержка 24/7"],
-    "MULTI": ["5 устройств", "Безлимитный трафик", "Все серверы", "Приоритетная скорость"],
-    "SUPER": ["10 устройств", "Безлимитный трафик", "Все серверы", "Максимальный приоритет"],
-}
+
+def _resolve_request_locale(request: web.Request, user=None) -> str:
+    query_lang = request.query.get("lang") or request.query.get("locale")
+    if user:
+        return get_user_locale(user, query_lang)
+    if query_lang:
+        return normalize_locale(query_lang)
+    return "ru"
 
 
-def _serialize_plans() -> dict:
-    result = {}
-    for key, plan in PLANS.items():
-        entry = {
-            "key": key,
-            "name": plan["name"],
-            "description": plan.get("description", ""),
-            "limit_ip": plan.get("limit_ip", 1),
-            "traffic_gb": plan.get("traffic_gb", 0),
-            "features": PLAN_FEATURES.get(key, []),
-            "recommended": key == "MULTI",
-        }
-        if key == "FREE":
-            entry["price"] = 0
-            entry["days"] = plan.get("days", 3)
-        else:
-            entry["prices"] = plan.get("prices", {})
-        result[key] = entry
-    return result
+def _serialize_plans(locale: str = "ru") -> dict:
+    return serialize_plans(locale)
 
 
-def _plan_display_name(plan: PlanType | None) -> str:
+def _plan_display_name(plan: PlanType | None, locale: str = "ru") -> str:
     if not plan:
         return "—"
-    cfg = PLANS.get(plan.value, {})
-    return cfg.get("name", plan.value)
+    return plan_display_name(plan.value, locale)
 
 
 def _is_subscription_live(sub) -> bool:
     return sub is not None and sub.is_active
 
 
-async def get_config(_request: web.Request) -> web.Response:
+async def get_config(request: web.Request) -> web.Response:
+    locale = _resolve_request_locale(request)
     return web.json_response({
         "brand_name": config.BRAND_NAME,
         "support_url": config.SUPPORT_URL,
         "bot_username": config.BOT_USERNAME,
         "cabinet_url": config.CABINET_URL,
-        "months_labels": MONTHS_LABELS,
+        "months_labels": months_labels(locale),
+        "locale": locale,
+        "i18n": i18n_bundle(locale),
     })
 
 
-async def get_plans(_request: web.Request) -> web.Response:
+async def get_i18n(request: web.Request) -> web.Response:
+    locale = normalize_locale(request.match_info.get("locale", "ru"))
+    return web.json_response(i18n_bundle(locale))
+
+
+async def set_locale(request: web.Request) -> web.Response:
+    try:
+        data = await request.json()
+        telegram_id = int(data.get("telegram_id", 0))
+        locale = normalize_locale(data.get("locale", ""))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_request"}, status=400)
+
+    if locale not in SUPPORTED_LOCALES:
+        return web.json_response({"error": "unsupported_locale"}, status=400)
+    if telegram_id <= 0:
+        return web.json_response({"error": "invalid telegram_id"}, status=400)
+
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        user = await user_repo.get_by_telegram_id(telegram_id)
+        if not user:
+            return web.json_response({"error": "User not found"}, status=404)
+        await user_repo.set_preferred_locale(user, locale)
+
     return web.json_response({
-        "plans": _serialize_plans(),
-        "months_labels": MONTHS_LABELS,
+        "ok": True,
+        "locale": locale,
+        "i18n": i18n_bundle(locale),
+    })
+
+
+async def get_plans(request: web.Request) -> web.Response:
+    locale = _resolve_request_locale(request)
+    return web.json_response({
+        "plans": _serialize_plans(locale),
+        "months_labels": months_labels(locale),
+        "locale": locale,
     })
 
 
@@ -113,13 +136,19 @@ async def get_user_info(request: web.Request) -> web.Response:
     })
 
 
-def _serialize_subscription(sub, *, traffic: dict | None = None, plan_info: dict | None = None) -> dict:
+def _serialize_subscription(
+    sub,
+    *,
+    traffic: dict | None = None,
+    plan_info: dict | None = None,
+    locale: str = "ru",
+) -> dict:
     is_live = _is_subscription_live(sub)
     subscription_url = resolve_subscription_url(sub, config)
     return {
         "id": sub.id,
         "plan": sub.plan.value if sub.plan else None,
-        "plan_name": _plan_display_name(sub.plan),
+        "plan_name": _plan_display_name(sub.plan, locale),
         "status": sub.status.value if sub.status else None,
         "is_active": is_live,
         "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
@@ -147,14 +176,19 @@ async def get_subscription(request: web.Request) -> web.Response:
     if not sub:
         return web.json_response({"status": None, "is_active": False})
 
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        user = await user_repo.get_by_telegram_id(telegram_id)
+    locale = _resolve_request_locale(request, user)
+
     traffic = None
     if sub.vpn_email:
         traffic = await xui.get_client_traffic(sub.vpn_email)
 
     plan_key = sub.plan.value if sub.plan else None
-    plan_info = _serialize_plans().get(plan_key) if plan_key else None
+    plan_info = _serialize_plans(locale).get(plan_key) if plan_key else None
 
-    return web.json_response(_serialize_subscription(sub, traffic=traffic, plan_info=plan_info))
+    return web.json_response(_serialize_subscription(sub, traffic=traffic, plan_info=plan_info, locale=locale))
 
 
 async def get_dashboard(request: web.Request) -> web.Response:
@@ -179,6 +213,8 @@ async def get_dashboard(request: web.Request) -> web.Response:
     has_subscription = sub is not None and _is_subscription_live(sub)
     is_new_vpn_user = _is_new_vpn_user(all_subs)
 
+    locale = _resolve_request_locale(request, user)
+
     traffic = None
     plan_info = None
     subscription_data = None
@@ -187,15 +223,19 @@ async def get_dashboard(request: web.Request) -> web.Response:
         if sub.vpn_email:
             traffic = await xui.get_client_traffic(sub.vpn_email)
         plan_key = sub.plan.value if sub.plan else None
-        plan_info = _serialize_plans().get(plan_key) if plan_key else None
+        plan_info = _serialize_plans(locale).get(plan_key) if plan_key else None
         subscription_data = _serialize_subscription(
-            sub, traffic=traffic, plan_info=plan_info
+            sub, traffic=traffic, plan_info=plan_info, locale=locale,
         )
 
     return web.json_response({
         "brand_name": config.BRAND_NAME,
         "support_url": config.SUPPORT_URL,
         "cabinet_url": config.CABINET_URL,
+        "locale": locale,
+        "preferred_locale": user.preferred_locale if user else locale,
+        "rtl": locale == "ar",
+        "i18n": i18n_bundle(locale),
         "user": {
             "telegram_id": telegram_id,
             "full_name": user.full_name if user else None,
@@ -210,7 +250,7 @@ async def get_dashboard(request: web.Request) -> web.Response:
         "needs_registration": bool(user and not user.web_registered),
         "web_registered": bool(user and user.web_registered),
         "subscription": subscription_data,
-        "plans": _serialize_plans() if not has_subscription else None,
+        "plans": _serialize_plans(locale) if not has_subscription else None,
     })
 
 

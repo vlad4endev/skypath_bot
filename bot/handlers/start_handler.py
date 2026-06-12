@@ -3,19 +3,15 @@
 """
 import logging
 from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, CommandObject
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from aiogram.filters import CommandObject
-
 from bot.config import Config
-from bot.keyboards.webapp import (
-    cabinet_button,
-    buy_vpn_button,
-    is_miniapp_available,
-    web_cabinet_button,
-)
+from bot.handlers.locale_handler import prompt_language_choice
+from bot.handlers.welcome import main_keyboard, send_welcome_for_user
+from bot.i18n import get_user_locale, t
+from bot.keyboards.webapp import cabinet_button, is_miniapp_available
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo
 
@@ -33,51 +29,14 @@ def _is_valid_https_url(url: str | None) -> bool:
     return host not in _PLACEHOLDER_HOSTS
 
 
-def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-
-    if is_miniapp_available():
-        if has_subscription:
-            builder.row(cabinet_button("👤 Личный кабинет"))
-        else:
-            builder.row(buy_vpn_button())
-    else:
-        if has_subscription:
-            builder.row(
-                InlineKeyboardButton(text="👤 Личный кабинет", callback_data="account"),
-            )
-        else:
-            builder.row(
-                InlineKeyboardButton(text="💳 Купить VPN", callback_data="plans"),
-            )
-
-    if has_subscription:
-        builder.row(
-            InlineKeyboardButton(text="🔑 Мои ключи", callback_data="my_vpn"),
-            InlineKeyboardButton(text="👤 Аккаунт", callback_data="account"),
-        )
-
-    builder.row(web_cabinet_button())
-
-    builder.row(
-        InlineKeyboardButton(text="💬 Отзывы", callback_data="reviews"),
-        InlineKeyboardButton(text="😎 О нас", callback_data="about"),
-    )
-    builder.row(
-        InlineKeyboardButton(text="❓ Поддержка", url=config.SUPPORT_URL),
-        InlineKeyboardButton(text="📄 Инфо", callback_data="info"),
-    )
-    return builder.as_markup()
-
-
 async def _send_welcome(
     message: Message,
     text: str,
     kb: InlineKeyboardMarkup,
     *,
     has_subscription: bool = False,
+    locale: str = "ru",
 ) -> None:
-    """Отправка приветствия: сначала текст (надёжно), фото — опционально."""
     try:
         await message.answer(text, reply_markup=kb)
     except Exception as e:
@@ -85,7 +44,7 @@ async def _send_welcome(
         try:
             await message.answer(
                 text,
-                reply_markup=main_keyboard(has_subscription=has_subscription),
+                reply_markup=main_keyboard(has_subscription=has_subscription, locale=locale),
             )
         except Exception as e2:
             logger.error("Welcome fallback failed: %s", e2)
@@ -99,37 +58,7 @@ async def _send_welcome(
             logger.warning("Welcome photo failed: %s", e)
 
 
-WELCOME_TEXT_NEW = f"""
-👋 Добро пожаловать в <b>{config.BRAND_NAME}</b>!
-
-🛡 Твой личный помощник для безопасного и свободного интернета.
-
-<b>Что ты получаешь:</b>
-• 🔒 Надёжная защита данных в любой сети
-• ⚡️ Безлимитная скорость без ограничений  
-• 📺 YouTube в 4K, стриминг без буферизации
-• 📱 До 10 устройств одновременно
-• 🌍 Серверы: Россия, США, Германия, Нидерланды, Казахстан
-• 💰 Честная цена — от 250 руб/месяц
-
-📱 Тарифы, оплата и личный кабинет — в приложении
-"""
-
-
-def welcome_text_returning(name: str, *, has_subscription: bool) -> str:
-    if has_subscription:
-        return f"""👋 С возвращением, <b>{name}</b>!
-
-🔑 Твой VPN активен — ключи и настройки в личном кабинете.
-
-📱 Управление подпиской и устройствами — в приложении 👇"""
-    return f"""👋 С возвращением, <b>{name}</b>!
-
-📱 Тарифы, оплата и личный кабинет — в приложении 👇"""
-
-
 def _parse_referrer_id(args: str | None) -> int | None:
-    """/start ref_123456789 или /start 123456789"""
     if not args:
         return None
     raw = args.strip()
@@ -146,6 +75,7 @@ async def cmd_start(
     message: Message,
     command: CommandObject,
     is_new_user: bool = False,
+    db_user=None,
 ):
     user = message.from_user
     referrer_id = _parse_referrer_id(command.args)
@@ -154,8 +84,6 @@ async def cmd_start(
         user_repo = UserRepo(session)
         sub_repo = SubscriptionRepo(session)
 
-        # UserMiddleware уже вызвал get_or_create до этого хендлера.
-        # Повторный вызов всегда вернёт is_new=False — для приветствия берём is_new_user из middleware.
         db_user, _ = await user_repo.get_or_create(
             telegram_id=user.id,
             username=user.username,
@@ -170,145 +98,105 @@ async def cmd_start(
         active_sub = await sub_repo.get_active(user.id)
 
     has_subscription = active_sub is not None
-    if is_new_user:
-        welcome = WELCOME_TEXT_NEW + "\n\n🎁 <b>Для тебя — 3 дня бесплатно!</b> Открой приложение 👇"
-    else:
-        name = user.first_name or "друг"
-        welcome = welcome_text_returning(name, has_subscription=has_subscription)
 
-    kb = main_keyboard(has_subscription=has_subscription)
+    if is_new_user and not db_user.preferred_locale:
+        await prompt_language_choice(message)
+        return
+
+    if not db_user.preferred_locale:
+        async with async_session() as session:
+            user_repo = UserRepo(session)
+            fresh = await user_repo.get_by_telegram_id(user.id)
+            if fresh:
+                await user_repo.ensure_locale_from_telegram(fresh)
+                db_user = fresh
+
+    locale = get_user_locale(db_user, user.language_code)
+    welcome, kb = send_welcome_for_user(
+        user.first_name,
+        locale=locale,
+        has_subscription=has_subscription,
+        is_new_user=is_new_user,
+    )
 
     await _send_welcome(
         message,
         welcome,
         kb,
         has_subscription=has_subscription,
+        locale=locale,
     )
 
 
 @router.callback_query(F.data == "main")
-async def cb_main(call: CallbackQuery):
+async def cb_main(call: CallbackQuery, db_user=None):
     async with async_session() as session:
         sub_repo = SubscriptionRepo(session)
         active_sub = await sub_repo.get_active(call.from_user.id)
 
     has_subscription = active_sub is not None
-    name = call.from_user.first_name or "друг"
-    text = welcome_text_returning(name, has_subscription=has_subscription)
-    kb = main_keyboard(has_subscription=has_subscription)
-    await call.message.edit_caption(
-        caption=text,
-        reply_markup=kb,
-    ) if call.message.photo else await call.message.edit_text(
-        text=text,
-        reply_markup=kb,
+    locale = get_user_locale(db_user, call.from_user.language_code)
+    welcome, kb = send_welcome_for_user(
+        call.from_user.first_name,
+        locale=locale,
+        has_subscription=has_subscription,
     )
+    if call.message.photo:
+        await call.message.edit_caption(caption=welcome, reply_markup=kb)
+    else:
+        await call.message.edit_text(text=welcome, reply_markup=kb)
     await call.answer()
 
 
 @router.callback_query(F.data == "about")
-async def cb_about(call: CallbackQuery):
-    text = f"""
-😎 <b>О нас — {config.BRAND_NAME}</b>
-
-Мы строим сервис, которому можно доверять.
-
-<b>Безопасное подключение:</b>
-Используем несколько современных VPN-протоколов — они работают вместе и подстраиваются под вашу сеть, чтобы дать стабильный и защищённый доступ в интернет.
-
-<b>Что это даёт:</b>
-• Шифрование трафика и защита данных
-• Устойчивое соединение в разных сетях и регионах
-• Высокая скорость для стриминга, мессенджеров и работы
-
-<b>Контакты:</b>
-• Поддержка: @SkyPathsupport
-• Канал: @SkyPathVPN
-"""
+async def cb_about(call: CallbackQuery, db_user=None):
+    locale = get_user_locale(db_user, call.from_user.language_code)
+    text = t(locale, "about.text", brand=config.BRAND_NAME)
     builder = InlineKeyboardBuilder()
     if is_miniapp_available():
-        builder.row(cabinet_button())
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="main"))
+        builder.row(cabinet_button(locale=locale))
+    builder.row(InlineKeyboardButton(text=t(locale, "menu.back"), callback_data="main"))
 
-    await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
-        if call.message.photo else \
+    if call.message.photo:
+        await call.message.edit_caption(caption=text, reply_markup=builder.as_markup())
+    else:
         await call.message.edit_text(text=text, reply_markup=builder.as_markup())
     await call.answer()
 
 
 @router.callback_query(F.data == "info")
-async def cb_info(call: CallbackQuery):
-    text = f"""
-📄 <b>Информация о {config.BRAND_NAME}</b>
-
-<b>Тарифы:</b>
-🆓 Пробный — 3 дня бесплатно, 1 устройство
-💎 Базовый — от 250 руб/мес, 3 устройства
-🚀 Мульти — от 350 руб/мес, 5 устройств
-👑 Супер — от 450 руб/мес, 10 устройств
-
-<b>Все тарифы включают:</b>
-✅ Безлимитный трафик
-✅ Все сервера
-✅ Поддержка 24/7
-✅ Инструкции для всех платформ
-
-<b>Платёж:</b>
-💳 Банковская карта (Platega)
-₿ Крипто (USDT, BTC, ETH)
-
-━━━━━━━━━━━━━━━━
-<b>📋 Документы</b>
-Используя сервис, вы принимаете условия пользовательского соглашения и политики конфиденциальности.
-"""
+async def cb_info(call: CallbackQuery, db_user=None):
+    locale = get_user_locale(db_user, call.from_user.language_code)
+    text = t(locale, "info.text", brand=config.BRAND_NAME)
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(
-            text="📄 Пользовательское соглашение",
-            url=config.TERMS_URL,
-        )
+        InlineKeyboardButton(text=t(locale, "menu.terms"), url=config.TERMS_URL),
     )
     builder.row(
-        InlineKeyboardButton(
-            text="🔒 Политика конфиденциальности",
-            url=config.PRIVACY_URL,
-        )
+        InlineKeyboardButton(text=t(locale, "menu.privacy"), url=config.PRIVACY_URL),
     )
     if is_miniapp_available():
-        builder.row(cabinet_button("📲 Открыть приложение"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="main"))
+        builder.row(cabinet_button(t(locale, "menu.open_app"), locale=locale))
+    builder.row(InlineKeyboardButton(text=t(locale, "menu.back"), callback_data="main"))
 
-    await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
-        if call.message.photo else \
+    if call.message.photo:
+        await call.message.edit_caption(caption=text, reply_markup=builder.as_markup())
+    else:
         await call.message.edit_text(text=text, reply_markup=builder.as_markup())
     await call.answer()
 
 
 @router.callback_query(F.data == "reviews")
-async def cb_reviews(call: CallbackQuery):
-    text = """
-💬 <b>Отзывы пользователей</b>
-
-⭐️⭐️⭐️⭐️⭐️ <b>Максим К.</b>
-«Пользуюсь 8 месяцев. YouTube летает, Netflix работает. Отличный сервис!»
-
-⭐️⭐️⭐️⭐️⭐️ <b>Анна М.</b>
-«Настроила за 5 минут по инструкции. Всё работает на iPhone и MacBook»
-
-⭐️⭐️⭐️⭐️⭐️ <b>Дмитрий П.</b>
-«Скорость не падает даже в 4К. Рекомендую всем!»
-
-⭐️⭐️⭐️⭐️⭐️ <b>Ольга Н.</b>
-«Поддержка ответила за 10 минут. Помогли настроить. Спасибо!»
-
-<i>Более 2000 довольных клиентов 🚀</i>
-"""
+async def cb_reviews(call: CallbackQuery, db_user=None):
+    locale = get_user_locale(db_user, call.from_user.language_code)
+    text = t(locale, "reviews.text")
     builder = InlineKeyboardBuilder()
     if is_miniapp_available():
-        builder.row(cabinet_button("📲 Попробовать"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="main"))
+        builder.row(cabinet_button(t(locale, "menu.try_app"), locale=locale))
+    builder.row(InlineKeyboardButton(text=t(locale, "menu.back"), callback_data="main"))
 
-    await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
-        if call.message.photo else \
+    if call.message.photo:
+        await call.message.edit_caption(caption=text, reply_markup=builder.as_markup())
+    else:
         await call.message.edit_text(text=text, reply_markup=builder.as_markup())
     await call.answer()

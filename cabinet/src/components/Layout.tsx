@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
+  Globe,
   Home,
   KeyRound,
   CreditCard,
@@ -11,18 +12,21 @@ import {
 import { useState } from 'react';
 import { Logo } from './ui';
 import { useAuth } from '../context/AuthContext';
-
-const NAV = [
-  { to: '/', icon: Home, label: 'Главная', end: true },
-  { to: '/keys', icon: KeyRound, label: 'Ключи' },
-  { to: '/plans', icon: CreditCard, label: 'Тарифы' },
-  { to: '/support', icon: HelpCircle, label: 'Помощь' },
-];
+import { useI18n } from '../i18n/I18nContext';
 
 export function Layout() {
   const { brand, user, logout } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const NAV = [
+    { to: '/', icon: Home, label: t('nav_home'), end: true },
+    { to: '/keys', icon: KeyRound, label: t('nav_keys') },
+    { to: '/plans', icon: CreditCard, label: t('nav_plans') },
+    { to: '/support', icon: HelpCircle, label: t('nav_support') },
+    { to: '/language', icon: Globe, label: t('nav_language') },
+  ];
 
   const handleLogout = async () => {
     await logout();
@@ -44,7 +48,7 @@ export function Layout() {
             type="button"
             className="icon-btn sidebar-close"
             onClick={() => setSidebarOpen(false)}
-            aria-label="Закрыть меню"
+            aria-label={t('close_menu')}
           >
             <X size={20} />
           </button>
@@ -69,13 +73,13 @@ export function Layout() {
           <div className="user-chip">
             <div className="user-avatar">{user?.full_name?.[0]?.toUpperCase() || '?'}</div>
             <div className="user-meta">
-              <strong>{user?.full_name || 'Пользователь'}</strong>
+              <strong>{user?.full_name || t('user')}</strong>
               <span>{user?.email}</span>
             </div>
           </div>
           <button type="button" className="btn btn--ghost btn--block" onClick={handleLogout}>
             <LogOut size={18} />
-            Выйти
+            {t('logout')}
           </button>
         </div>
       </aside>
@@ -86,7 +90,7 @@ export function Layout() {
             type="button"
             className="icon-btn menu-btn"
             onClick={() => setSidebarOpen(true)}
-            aria-label="Меню"
+            aria-label={t('menu')}
           >
             <Menu size={22} />
           </button>
@@ -99,7 +103,7 @@ export function Layout() {
         </main>
 
         <nav className="bottom-nav">
-          {NAV.map(({ to, icon: Icon, label, end }) => (
+          {NAV.filter(({ to }) => to !== '/language').map(({ to, icon: Icon, label, end }) => (
             <NavLink
               key={to}
               to={to}

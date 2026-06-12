@@ -1,14 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { I18nProvider, useI18n } from './i18n/I18nContext';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { HomePage } from './pages/HomePage';
 import { KeysPage } from './pages/KeysPage';
 import { PlansPage } from './pages/PlansPage';
 import { SupportPage } from './pages/SupportPage';
+import { LanguagePage } from './pages/LanguagePage';
 import { Spinner } from './components/ui';
 import { api } from './api/client';
+
+function AuthI18nBridge() {
+  const { authenticated } = useAuth();
+  const { hydrateFromAuth } = useI18n();
+
+  useEffect(() => {
+    if (!authenticated) return;
+    api.me().then((me) => hydrateFromAuth(me.i18n)).catch(() => {});
+  }, [authenticated, hydrateFromAuth]);
+
+  return null;
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { authenticated, loading } = useAuth();
@@ -26,21 +40,22 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function PaymentReturnHandler() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [message, setMessage] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const pollPayment = useCallback(async (orderId: string) => {
-    setMessage('Проверяем оплату…');
+    setMessage(t('payment_checking'));
     for (let i = 0; i < 30; i += 1) {
       try {
         const status = await api.paymentStatus(orderId);
         if (status.status === 'succeeded') {
           sessionStorage.removeItem('pending_order_id');
-          setMessage('✅ Оплата прошла успешно!');
+          setMessage(t('payment_success'));
           setSearchParams({});
           return;
         }
         if (status.status === 'cancelled') {
           sessionStorage.removeItem('pending_order_id');
-          setMessage('Оплата отменена');
+          setMessage(t('payment_cancelled'));
           setSearchParams({});
           return;
         }
@@ -49,15 +64,15 @@ function PaymentReturnHandler() {
       }
       await new Promise((r) => setTimeout(r, 2000));
     }
-    setMessage('Оплата обрабатывается. Обновите страницу через минуту.');
-  }, [setSearchParams]);
+    setMessage(t('payment_pending'));
+  }, [setSearchParams, t]);
 
   useEffect(() => {
     const payment = searchParams.get('payment');
     const orderId = searchParams.get('order_id') || sessionStorage.getItem('pending_order_id');
     if (payment === 'failed') {
       sessionStorage.removeItem('pending_order_id');
-      setMessage('Оплата не завершена');
+      setMessage(t('payment_failed'));
       setSearchParams({});
       return;
     }
@@ -92,6 +107,7 @@ function AppRoutes() {
           <Route path="keys" element={<KeysPage />} />
           <Route path="plans" element={<PlansPage />} />
           <Route path="support" element={<SupportPage />} />
+          <Route path="language" element={<LanguagePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -101,10 +117,13 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter basename="/cabinet">
-        <AppRoutes />
-      </BrowserRouter>
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <BrowserRouter basename="/cabinet">
+          <AuthI18nBridge />
+          <AppRoutes />
+        </BrowserRouter>
+      </AuthProvider>
+    </I18nProvider>
   );
 }

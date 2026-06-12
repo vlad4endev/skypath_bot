@@ -25,23 +25,27 @@ def miniapp_url(tab: str | None = None) -> str:
 
 
 def miniapp_payment_return_url(order_id: str, outcome: str = "success") -> str:
-    """URL возврата в Mini App после оплаты Platega (success / failed)."""
     base = config.MINI_APP_URL.rstrip("/")
     sep = "&" if "?" in base else "?"
     return f"{base}{sep}tab=home&payment={outcome}&order_id={order_id}"
 
 
-def cabinet_button(text: str | None = None) -> InlineKeyboardButton:
-    label = text or f"🌐 {config.BRAND_NAME}"
+def cabinet_button(text: str | None = None, locale: str = "ru") -> InlineKeyboardButton:
+    from bot.i18n import t
+
+    label = text if text else t(locale, "menu.cabinet")
     return InlineKeyboardButton(
         text=label,
         web_app=WebAppInfo(url=miniapp_url()),
     )
 
 
-def buy_vpn_button(text: str = "💳 Купить VPN") -> InlineKeyboardButton:
+def buy_vpn_button(text: str | None = None, locale: str = "ru") -> InlineKeyboardButton:
+    from bot.i18n import t
+
+    label = text or t(locale, "menu.buy_vpn")
     return InlineKeyboardButton(
-        text=text,
+        text=label,
         web_app=WebAppInfo(url=miniapp_url("plans")),
     )
 
@@ -50,5 +54,8 @@ def cabinet_login_url() -> str:
     return f"{config.CABINET_URL.rstrip('/')}/login"
 
 
-def web_cabinet_button(text: str = "🌐 Веб-версия") -> InlineKeyboardButton:
-    return InlineKeyboardButton(text=text, url=cabinet_login_url())
+def web_cabinet_button(text: str | None = None, locale: str = "ru") -> InlineKeyboardButton:
+    from bot.i18n import t
+
+    label = text or t(locale, "menu.web_cabinet")
+    return InlineKeyboardButton(text=label, url=cabinet_login_url())

@@ -5,8 +5,10 @@ import { api } from '../api/client';
 import type { DashboardData } from '../types';
 import { formatDate, getInitials } from '../utils/format';
 import { Spinner, StatusBadge, TrafficRing } from '../components/ui';
+import { useI18n } from '../i18n/I18nContext';
 
 export function HomePage() {
+  const { t, locale, hydrateFromAuth } = useI18n();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -15,13 +17,14 @@ export function HomePage() {
     setError('');
     try {
       const dash = await api.dashboard();
+      if (dash.i18n) hydrateFromAuth(dash.i18n);
       setData(dash);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      setError(e instanceof Error ? e.message : t('load_error'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hydrateFromAuth, t]);
 
   useEffect(() => {
     load();
@@ -31,7 +34,7 @@ export function HomePage() {
     return (
       <div className="page-loading">
         <Spinner size={32} />
-        <span>Загрузка кабинета…</span>
+        <span>{t('loading')}</span>
       </div>
     );
   }
@@ -39,10 +42,10 @@ export function HomePage() {
   if (error || !data) {
     return (
       <div className="page-error">
-        <p>{error || 'Не удалось загрузить данные'}</p>
+        <p>{error || t('load_error')}</p>
         <button type="button" className="btn btn--primary" onClick={load}>
           <RefreshCw size={18} />
-          Повторить
+          {t('retry')}
         </button>
       </div>
     );
@@ -58,8 +61,8 @@ export function HomePage() {
     <div className="page home-page">
       <header className="page-header">
         <div>
-          <p className="eyebrow">Добро пожаловать</p>
-          <h1>{user?.full_name || 'Пользователь'}</h1>
+          <p className="eyebrow">{t('welcome')}</p>
+          <h1>{user?.full_name || t('user')}</h1>
           {user?.email && <p className="subtitle">{user.email}</p>}
         </div>
         <div className="profile-avatar lg">{getInitials(user?.full_name)}</div>
@@ -69,14 +72,14 @@ export function HomePage() {
         <div className="stat-card">
           <Calendar size={20} />
           <div>
-            <span>Клиент с</span>
-            <strong>{formatDate(user?.member_since)}</strong>
+            <span>{t('client_since')}</span>
+            <strong>{formatDate(user?.member_since, locale)}</strong>
           </div>
         </div>
         <div className="stat-card">
           <Gift size={20} />
           <div>
-            <span>Рефералы</span>
+            <span>{t('referrals')}</span>
             <strong>{user?.referrals_count ?? 0}</strong>
           </div>
         </div>
