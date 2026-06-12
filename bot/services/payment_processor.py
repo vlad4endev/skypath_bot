@@ -161,6 +161,13 @@ async def process_webhook(body: dict[str, Any], bot: Bot) -> dict[str, Any]:
         logger.info("Platega webhook: unparseable body")
         return {"ok": True, "skipped": "unparseable"}
 
+    if event.transaction_id and not event.subscription_id:
+        tx_data = await platega.fetch_transaction(event.transaction_id)
+        if tx_data:
+            enriched = parse_platega_webhook(tx_data)
+            if enriched:
+                event = enriched
+
     logger.info(
         "Platega webhook type=%s order=%s tx=%s status=%s amount=%s",
         event.event_type,
@@ -191,7 +198,11 @@ async def process_webhook(body: dict[str, Any], bot: Bot) -> dict[str, Any]:
     async with async_session() as session:
         user_repo = UserRepo(session)
         user = await user_repo.get_by_id(payment.user_id)
-        telegram_id = event.telegram_id or (user.telegram_id if user else None)
+        telegram_id = (
+            event.telegram_id
+            or payment.telegram_id
+            or (user.telegram_id if user else None)
+        )
 
     if not telegram_id:
         logger.warning("Platega webhook: telegram_id missing for payment %s", payment.id)

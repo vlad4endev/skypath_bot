@@ -74,8 +74,9 @@ nano .env   # BOT_TOKEN, Platega, 3X-UI, домен
 | `MINI_APP_URL` | URL Telegram Mini App |
 | `DB_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection string |
-| `PLATEGA_MERCHANT_ID` | Merchant ID из личного кабинета Platega |
+| `PLATEGA_MERCHANT_ID` | Merchant ID из личного кабинета Platega ([docs](https://docs.platega.io/)) |
 | `PLATEGA_SECRET` | API Secret из личного кабинета Platega |
+| `PLATEGA_PAYMENT_METHOD` | Способ оплаты: пусто = v2 (выбор на странице Platega), `2`=СБП, `11`=карта |
 | `XUI_HOST` | URL 3X-UI панели (с портом) |
 | `XUI_URL_PREFIX` | Префикс URL (из настроек панели) |
 | `XUI_USERNAME` | Логин в 3X-UI |

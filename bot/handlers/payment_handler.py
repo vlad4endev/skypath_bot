@@ -15,6 +15,7 @@ from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo, PaymentRepo
 from database.models import PlanType, SubscriptionStatus
 from bot.services.payment_processor import create_paid_order, process_manual_check, process_webhook
+from bot.services.payment import verify_webhook_headers
 from bot.services.xui_client import XUIClient
 from bot.services.vpn_provision import provision_vpn_for_subscription
 from bot.handlers.referral_handler import process_referral_bonus
@@ -488,6 +489,9 @@ async def on_web_app_data(message: Message):
 async def platega_webhook(request: Request) -> web.Response:
     """Webhook обработчик Platega платежей"""
     try:
+        if not verify_webhook_headers(request.headers, config):
+            return web.json_response({"error": "unauthorized"}, status=401)
+
         body = await request.json()
         bot: Bot = request.app["bot"]
         result = await process_webhook(body, bot)

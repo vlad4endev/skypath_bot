@@ -53,9 +53,12 @@ class Config:
     # Redis (FSM + кеш)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # Platega.io
+    # Platega.io — https://docs.platega.io/
     PLATEGA_MERCHANT_ID: str = os.getenv("PLATEGA_MERCHANT_ID", "")
     PLATEGA_SECRET: str = os.getenv("PLATEGA_SECRET", "")
+    # Пусто = v2 (пользователь выбирает способ на странице Platega).
+    # 2=СБП, 11=карта, 12=международная, 13=крипто
+    PLATEGA_PAYMENT_METHOD = None
 
     # 3X-UI VPN Panel
     XUI_HOST: str = os.getenv("XUI_HOST", "https://178.208.87.245:2053")
@@ -81,6 +84,8 @@ class Config:
     def __post_init__(self):
         self.BOT_MODE = self.BOT_MODE.strip().lower()
         self.WEBHOOK_SECRET = resolve_webhook_secret(self.BOT_TOKEN, self.WEBHOOK_SECRET)
+        method_raw = os.getenv("PLATEGA_PAYMENT_METHOD", "").strip()
+        self.PLATEGA_PAYMENT_METHOD = int(method_raw) if method_raw else None
         self.ADMIN_IDS = [
             int(x) for x in os.getenv("ADMIN_IDS", "86517651").split(",") if x.strip()
         ]

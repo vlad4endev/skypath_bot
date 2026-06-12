@@ -3,7 +3,7 @@ import { webhookCallback } from "grammy";
 import type { Bot } from "grammy";
 import type { BotContext } from "../bot/context.js";
 import type { Env } from "../env.js";
-import { parsePlategaWebhook } from "../api/platega.js";
+import { parsePlategaWebhook, verifyPlategaWebhookHeaders } from "../api/platega.js";
 import { processPaidOrder } from "../shared/subscriptionService.js";
 
 export async function createServer(bot: Bot<BotContext>, env: Env) {
@@ -15,17 +15,26 @@ export async function createServer(bot: Bot<BotContext>, env: Env) {
   app.post("/webhook/telegram", telegramWebhook);
 
   app.post("/webhook/platega", async (request, reply) => {
+    if (!verifyPlategaWebhookHeaders(request.headers, env)) {
+      return reply.code(401).send({ error: "Unauthorized" });
+    }
+
     const parsed = parsePlategaWebhook(request.body);
     if (!parsed) {
       return reply.code(400).send({ error: "Invalid payload" });
     }
 
     if (!parsed.isPaid) {
-      return reply.send({ ok: true, skipped: true });
+      return reply.send({ ok: true, skipped: parsed.isCancelled ? "cancelled" : true });
+    }
+
+    const paymentRef = parsed.orderId ?? parsed.transactionId;
+    if (!paymentRef) {
+      return reply.code(400).send({ error: "Missing payment reference" });
     }
 
     try {
-      const result = await processPaidOrder(parsed.orderId, env);
+      const result = await processPaidOrder(paymentRef, env);
 
       if (result.subLink) {
         const text = result.alreadyPaid
@@ -37,7 +46,7 @@ export async function createServer(bot: Bot<BotContext>, env: Env) {
         });
       }
     } catch (error) {
-      request.log.error({ error, orderId: parsed.orderId }, "Platega webhook failed");
+      request.log.error({ error, paymentRef }, "Platega webhook failed");
       return reply.code(500).send({ error: "Processing failed" });
     }
 
