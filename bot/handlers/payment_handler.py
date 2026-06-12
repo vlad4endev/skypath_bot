@@ -32,6 +32,75 @@ xui = XUIClient(
 )
 
 
+@router.callback_query(F.data.startswith("confirm_plan:"))
+async def cb_confirm_plan(call: CallbackQuery):
+    """Подтверждение тарифа из inline-меню бота."""
+    parts = call.data.split(":")
+    plan_key = parts[1]
+    months = int(parts[2])
+    price = int(parts[3])
+    promo_code = None
+    if len(parts) > 4 and parts[4].startswith("promo_"):
+        promo_code = parts[4][6:]
+
+    user = call.from_user
+    if not user:
+        await call.answer("Ошибка", show_alert=True)
+        return
+
+    if plan_key == "FREE" or price == 0:
+        await _issue_free_trial(call, user)
+        await call.answer()
+        return
+
+    plan = PLANS.get(plan_key)
+    if not plan:
+        await call.answer("Тариф не найден", show_alert=True)
+        return
+
+    try:
+        order = await create_paid_order(
+            telegram_id=user.id,
+            plan_key=plan_key,
+            months=months,
+            price=price,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            promo_code=promo_code,
+        )
+    except Exception as e:
+        logger.error("confirm_plan payment error: %s", e)
+        await call.answer("Не удалось создать платёж", show_alert=True)
+        return
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text=f"💳 Оплатить {price} руб.", url=order.payment_url),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Я оплатил",
+            callback_data=f"check_payment:{order.payment_id}",
+        )
+    )
+
+    label = MONTHS_LABELS.get(months, f"{months} мес.")
+    text = (
+        f"💳 <b>Оплата</b>\n\n"
+        f"📦 Тариф: <b>{plan['name']}</b>\n"
+        f"⏱ Срок: <b>{label}</b>\n"
+        f"💰 Сумма: <b>{price} руб.</b>\n\n"
+        "После оплаты VPN ключ придёт автоматически в этот чат."
+    )
+
+    if call.message.photo:
+        await call.message.edit_caption(caption=text, reply_markup=builder.as_markup())
+    else:
+        await call.message.edit_text(text=text, reply_markup=builder.as_markup())
+    await call.answer()
+
+
 @router.callback_query(F.data.startswith("check_payment:"))
 async def cb_check_payment(call: CallbackQuery):
     """Пользователь нажал 'Я оплатил' — проверяем статус"""

@@ -145,13 +145,20 @@ async def get_subscription(request: web.Request) -> web.Response:
 async def get_dashboard(request: web.Request) -> web.Response:
     """Полный личный кабинет: пользователь, подписка, трафик, серверы."""
     telegram_id = int(request.match_info["telegram_id"])
+    if telegram_id <= 0:
+        return web.json_response({"error": "invalid telegram_id"}, status=400)
 
     async with async_session() as session:
         user_repo = UserRepo(session)
         sub_repo = SubscriptionRepo(session)
-        user = await user_repo.get_by_telegram_id(telegram_id)
-        sub = await sub_repo.get_active(telegram_id) if user else None
-        referrals = await user_repo.count_referrals(telegram_id) if user else 0
+        user, _ = await user_repo.get_or_create(
+            telegram_id=telegram_id,
+            username=request.query.get("username") or None,
+            first_name=request.query.get("first_name") or None,
+            last_name=request.query.get("last_name") or None,
+        )
+        sub = await sub_repo.get_active(telegram_id)
+        referrals = await user_repo.count_referrals(telegram_id)
 
     has_subscription = sub is not None and _is_subscription_live(sub)
 

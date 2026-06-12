@@ -20,6 +20,7 @@ from bot.handlers import (
     start_handler,
     account_handler,
     payment_handler,
+    subscription_handler,
     admin_handler,
     miniapp_handler,
     referral_handler,
@@ -80,6 +81,7 @@ def create_app(config: Config) -> web.Application:
 
     dp.include_router(start_handler.router)
     dp.include_router(account_handler.router)
+    dp.include_router(subscription_handler.router)
     dp.include_router(payment_handler.router)
     dp.include_router(referral_handler.router)
     dp.include_router(admin_handler.router)

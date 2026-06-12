@@ -34,6 +34,10 @@ def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
     if is_miniapp_available():
         label = "👤 Личный кабинет" if has_subscription else "🚀 Получить VPN"
         builder.row(cabinet_button(label))
+    else:
+        builder.row(
+            InlineKeyboardButton(text="🔑 Получить VPN", callback_data="plans"),
+        )
 
     if has_subscription:
         builder.row(
@@ -163,24 +167,6 @@ async def cb_main(call: CallbackQuery):
         text=WELCOME_TEXT,
         reply_markup=kb,
     )
-    await call.answer()
-
-
-@router.callback_query(F.data == "plans")
-async def cb_plans_redirect(call: CallbackQuery):
-    """Старые кнопки «Купить» — перенаправление в Mini App."""
-    text = (
-        "💎 <b>Тарифы и оплата</b> доступны в приложении.\n\n"
-        "Нажми кнопку ниже — там удобный выбор тарифа и личный кабинет."
-    )
-    builder = InlineKeyboardBuilder()
-    if is_miniapp_available():
-        builder.row(cabinet_button("🌐 Открыть приложение"))
-    builder.row(InlineKeyboardButton(text="⬅️ Главная", callback_data="main"))
-
-    await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
-        if call.message.photo else \
-        await call.message.edit_text(text=text, reply_markup=builder.as_markup())
     await call.answer()
 
 
