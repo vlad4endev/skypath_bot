@@ -48,6 +48,7 @@ services:
       - "${BOT_HOST_PORT:-8084}:8080"
     volumes:
       - ./webapp:/app/webapp:ro
+      - ./data/nocodb_export:/app/data/nocodb_export
     networks:
       - skypath_net
 

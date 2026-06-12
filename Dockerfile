@@ -12,6 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bot/ ./bot/
 COPY database/ ./database/
 COPY alembic/ ./alembic/
+COPY scripts/ ./scripts/
+COPY data/ ./data/
 COPY alembic.ini .
 
 ENV PYTHONUNBUFFERED=1
