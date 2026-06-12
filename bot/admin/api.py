@@ -315,6 +315,39 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
             data = await repo.get_plan_distribution()
         return _json(data)
 
+    async def stats_analytics(request: web.Request) -> web.Response:
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            data = await repo.get_client_analytics()
+        return _json(data)
+
+    async def stats_inactive_payers(request: web.Request) -> web.Response:
+        days = int(request.query.get("days", "30"))
+        limit = int(request.query.get("limit", "15"))
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            rows = await repo.get_inactive_payers(days=days, limit=limit)
+        return _json([
+            {
+                **_user_json(row["user"], row["subscription"]),
+                "last_paid_at": row["last_paid_at"],
+                "days_since_payment": row["days_since_payment"],
+                "payments_count": row["payments_count"],
+                "total_spent": row["total_spent"],
+            }
+            for row in rows
+        ])
+
+    async def stats_recent_users(request: web.Request) -> web.Response:
+        limit = int(request.query.get("limit", "8"))
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            rows = await repo.get_recent_users(limit=limit)
+        return _json([
+            _user_json(row["user"], row["subscription"])
+            for row in rows
+        ])
+
     # ── Users ──────────────────────────────────────────────────
 
     async def users_list(request: web.Request) -> web.Response:
@@ -1107,6 +1140,9 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         web.get("/admin/api/stats/revenue", stats_revenue),
         web.get("/admin/api/stats/users", stats_users),
         web.get("/admin/api/stats/plans", stats_plans),
+        web.get("/admin/api/stats/analytics", stats_analytics),
+        web.get("/admin/api/stats/inactive-payers", stats_inactive_payers),
+        web.get("/admin/api/stats/recent-users", stats_recent_users),
         web.get("/admin/api/config", config_plans),
         web.get("/admin/api/users", users_list),
         web.get("/admin/api/users/{user_id}", users_detail),

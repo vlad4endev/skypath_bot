@@ -2,7 +2,9 @@ import type {
   AdminConfig,
   BroadcastRow,
   BroadcastTarget,
+  ClientAnalytics,
   DashboardStats,
+  InactivePayerRow,
   Paginated,
   PaymentRow,
   PlanStat,
@@ -14,6 +16,7 @@ import type {
   UserDetail,
   UserRow,
   UsersGrowthPoint,
+  XuiStatusResponse,
   XuiSyncResult,
 } from '../types';
 
@@ -90,6 +93,18 @@ export const api = {
     request<UsersGrowthPoint[]>(`/admin/api/stats/users?days=${days}`),
 
   plansStats: () => request<PlanStat[]>('/admin/api/stats/plans'),
+
+  analytics: () => request<ClientAnalytics>('/admin/api/stats/analytics'),
+
+  inactivePayers: (days = 30, limit = 15) =>
+    request<InactivePayerRow[]>(
+      `/admin/api/stats/inactive-payers?days=${days}&limit=${limit}`,
+    ),
+
+  recentUsers: (limit = 8) =>
+    request<UserRow[]>(`/admin/api/stats/recent-users?limit=${limit}`),
+
+  xuiStatus: () => request<XuiStatusResponse>('/admin/api/xui/status'),
 
   users: (page = 1, search = '', banned = '') => {
     const params = new URLSearchParams({

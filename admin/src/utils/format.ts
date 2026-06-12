@@ -27,6 +27,35 @@ export function fmtExpiry(sub: { expires_at?: string | null; is_expired?: boolea
   return label;
 }
 
+function daysWord(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'дней';
+  if (mod10 === 1) return 'день';
+  if (mod10 >= 2 && mod10 <= 4) return 'дня';
+  return 'дней';
+}
+
+/** Оставшиеся дни подписки (без даты/времени). */
+export function fmtDaysLeft(
+  sub: { expires_at?: string | null; is_expired?: boolean; days_left?: number } | null | undefined,
+): string {
+  if (!sub?.expires_at) return '—';
+  if (subIsExpired(sub)) return 'истекло';
+  if (sub.days_left == null) return '—';
+  return `${sub.days_left} ${daysWord(sub.days_left)}`;
+}
+
+/** Класс цвета: зелёный при >3 дн., красный при ≤3 дн. или истекло. */
+export function daysLeftClass(
+  sub: { expires_at?: string | null; is_expired?: boolean; days_left?: number; status?: string | null } | null | undefined,
+): string {
+  if (!sub?.expires_at) return '';
+  if (subIsExpired(sub)) return 'text-danger';
+  if (sub.days_left == null) return '';
+  return sub.days_left <= 3 ? 'text-danger' : 'text-success';
+}
+
 export function toDatetimeLocal(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -42,6 +71,33 @@ export function subIsExpired(sub: { is_expired?: boolean; status?: string | null
 
 export function pagesCount(total: number, perPage: number): number {
   return Math.max(1, Math.ceil(total / perPage));
+}
+
+export function fmtBytes(bytes: number | undefined | null): string {
+  if (bytes == null || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i += 1;
+  }
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+export function fmtUptime(seconds: number | undefined | null): string {
+  if (!seconds) return '—';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}д ${h}ч`;
+  if (h > 0) return `${h}ч ${m}м`;
+  return `${m}м`;
+}
+
+export function fmtPct(value: number | undefined | null, digits = 1): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `${value.toFixed(digits)}%`;
 }
 
 export function userInitials(

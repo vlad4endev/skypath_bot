@@ -175,6 +175,183 @@ class AdminRepo:
         )
         return [{"plan": row[0].value, "count": row[1]} for row in result.all()]
 
+    async def get_client_analytics(self) -> dict[str, Any]:
+        now = datetime.utcnow()
+        month_ago = now - timedelta(days=30)
+
+        total_users = (await self.session.execute(select(func.count(User.id)))).scalar() or 0
+
+        paying_users = (await self.session.execute(
+            select(func.count(func.distinct(Payment.user_id))).where(
+                Payment.status == PaymentStatus.SUCCEEDED
+            )
+        )).scalar() or 0
+
+        repeat_payers = (await self.session.execute(
+            select(func.count())
+            .select_from(
+                select(Payment.user_id)
+                .where(Payment.status == PaymentStatus.SUCCEEDED)
+                .group_by(Payment.user_id)
+                .having(func.count(Payment.id) >= 2)
+                .subquery()
+            )
+        )).scalar() or 0
+
+        total_revenue = (await self.session.execute(
+            select(func.coalesce(func.sum(Payment.paid_amount), func.sum(Payment.amount))).where(
+                Payment.status == PaymentStatus.SUCCEEDED
+            )
+        )).scalar() or 0
+
+        payments_count = (await self.session.execute(
+            select(func.count(Payment.id)).where(Payment.status == PaymentStatus.SUCCEEDED)
+        )).scalar() or 0
+
+        revenue_30d = (await self.session.execute(
+            select(func.coalesce(func.sum(Payment.paid_amount), func.sum(Payment.amount))).where(
+                and_(Payment.status == PaymentStatus.SUCCEEDED, Payment.paid_at >= month_ago)
+            )
+        )).scalar() or 0
+
+        inactive_30d = await self.count_inactive_payers(30)
+        inactive_60d = await self.count_inactive_payers(60)
+        inactive_90d = await self.count_inactive_payers(90)
+
+        active_with_payment = (await self.session.execute(
+            select(func.count(func.distinct(Subscription.user_id))).where(
+                and_(
+                    Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
+                    Subscription.user_id.in_(
+                        select(Payment.user_id).where(Payment.status == PaymentStatus.SUCCEEDED)
+                    ),
+                )
+            )
+        )).scalar() or 0
+
+        expired_paid = (await self.session.execute(
+            select(func.count(func.distinct(Subscription.user_id))).where(
+                and_(
+                    Subscription.status == SubscriptionStatus.EXPIRED,
+                    Subscription.user_id.in_(
+                        select(Payment.user_id).where(Payment.status == PaymentStatus.SUCCEEDED)
+                    ),
+                )
+            )
+        )).scalar() or 0
+
+        never_paid = max(0, total_users - paying_users)
+        conversion = round(paying_users / total_users * 100, 1) if total_users else 0.0
+        avg_ltv = round(float(total_revenue) / paying_users, 2) if paying_users else 0.0
+        avg_payment = round(float(total_revenue) / payments_count, 2) if payments_count else 0.0
+        repeat_rate = round(repeat_payers / paying_users * 100, 1) if paying_users else 0.0
+
+        return {
+            "paying_users": paying_users,
+            "never_paid": never_paid,
+            "repeat_payers": repeat_payers,
+            "repeat_rate_pct": repeat_rate,
+            "conversion_pct": conversion,
+            "total_revenue": float(total_revenue),
+            "revenue_30d": float(revenue_30d),
+            "avg_ltv": avg_ltv,
+            "avg_payment": avg_payment,
+            "active_paying": active_with_payment,
+            "expired_paid": expired_paid,
+            "inactive_payers": {
+                "days_30": inactive_30d,
+                "days_60": inactive_60d,
+                "days_90": inactive_90d,
+            },
+        }
+
+    async def _last_payment_subquery(self):
+        amount_expr = func.coalesce(Payment.paid_amount, Payment.amount)
+        return (
+            select(
+                Payment.user_id.label("user_id"),
+                func.max(Payment.paid_at).label("last_paid_at"),
+                func.count(Payment.id).label("payments_count"),
+                func.coalesce(func.sum(amount_expr), 0).label("total_spent"),
+            )
+            .where(Payment.status == PaymentStatus.SUCCEEDED)
+            .group_by(Payment.user_id)
+            .subquery()
+        )
+
+    async def count_inactive_payers(self, days: int) -> int:
+        days = min(max(1, days), 365)
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        last_pay = await self._last_payment_subquery()
+        result = await self.session.execute(
+            select(func.count()).select_from(last_pay).where(last_pay.c.last_paid_at < cutoff)
+        )
+        return result.scalar() or 0
+
+    async def get_inactive_payers(
+        self,
+        *,
+        days: int = 30,
+        limit: int = 15,
+    ) -> list[dict[str, Any]]:
+        days = min(max(1, days), 365)
+        limit = min(max(1, limit), 50)
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        last_pay = await self._last_payment_subquery()
+
+        result = await self.session.execute(
+            select(
+                User,
+                last_pay.c.last_paid_at,
+                last_pay.c.payments_count,
+                last_pay.c.total_spent,
+            )
+            .join(last_pay, last_pay.c.user_id == User.id)
+            .where(last_pay.c.last_paid_at < cutoff)
+            .order_by(last_pay.c.last_paid_at.asc())
+            .limit(limit)
+        )
+        rows = result.all()
+        sub_map = await self._subscription_summaries_by_telegram(
+            [row[0].telegram_id for row in rows]
+        )
+
+        items: list[dict[str, Any]] = []
+        for user, last_paid_at, payments_count, total_spent in rows:
+            days_since = (datetime.utcnow() - last_paid_at).days if last_paid_at else 0
+            items.append({
+                "user": user,
+                "subscription": sub_map.get(
+                    user.telegram_id,
+                    self.subscription_summary(None),
+                ),
+                "last_paid_at": last_paid_at.isoformat() if last_paid_at else None,
+                "days_since_payment": days_since,
+                "payments_count": int(payments_count or 0),
+                "total_spent": float(total_spent or 0),
+            })
+        return items
+
+    async def get_recent_users(self, limit: int = 8) -> list[dict[str, Any]]:
+        limit = min(max(1, limit), 20)
+        result = await self.session.execute(
+            select(User).order_by(User.created_at.desc()).limit(limit)
+        )
+        users = list(result.scalars().all())
+        sub_map = await self._subscription_summaries_by_telegram(
+            [u.telegram_id for u in users]
+        )
+        return [
+            {
+                "user": user,
+                "subscription": sub_map.get(
+                    user.telegram_id,
+                    self.subscription_summary(None),
+                ),
+            }
+            for user in users
+        ]
+
     # ── Users ──────────────────────────────────────────────────
 
     @staticmethod

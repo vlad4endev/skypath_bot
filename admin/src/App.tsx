@@ -49,7 +49,7 @@ function AppRoutes() {
               <Layout onXuiSync={() => openXuiSync()} />
             }
           >
-            <Route index element={<DashboardPage />} />
+            <Route index element={<DashboardPage onXuiSync={(id) => openXuiSync(id)} onToast={show} />} />
             <Route path="users" element={<UsersPage onXuiSync={(id) => openXuiSync(id)} onToast={show} />} />
             <Route path="payments" element={<PaymentsPage onToast={show} />} />
             <Route path="promotions" element={<PromotionsPage onToast={show} />} />

@@ -38,6 +38,61 @@ export interface PlanStat {
   count: number;
 }
 
+export interface ClientAnalytics {
+  paying_users: number;
+  never_paid: number;
+  repeat_payers: number;
+  repeat_rate_pct: number;
+  conversion_pct: number;
+  total_revenue: number;
+  revenue_30d: number;
+  avg_ltv: number;
+  avg_payment: number;
+  active_paying: number;
+  expired_paid: number;
+  inactive_payers: {
+    days_30: number;
+    days_60: number;
+    days_90: number;
+  };
+}
+
+export interface InactivePayerRow extends UserRow {
+  last_paid_at: string | null;
+  days_since_payment: number;
+  payments_count: number;
+  total_spent: number;
+}
+
+export interface XuiServerMetrics {
+  cpu?: number;
+  cpuCores?: number;
+  logicalPro?: number;
+  mem?: { current?: number; total?: number };
+  swap?: { current?: number; total?: number };
+  disk?: { current?: number; total?: number };
+  netIO?: { up?: number; down?: number };
+  netTraffic?: { sent?: number; recv?: number };
+  xray?: { state?: string; version?: string; errorMsg?: string };
+  uptime?: number;
+  loads?: number[];
+  tcpCount?: number;
+  udpCount?: number;
+  publicIP?: { ipv4?: string; ipv6?: string };
+}
+
+export interface XuiStatusResponse {
+  ok: boolean;
+  error?: string;
+  panel?: {
+    host?: string;
+    sub_base_url?: string;
+  };
+  server?: XuiServerMetrics;
+  inbounds_count?: number;
+  clients_count?: number;
+}
+
 export interface SubscriptionSummary {
   plan: string | null;
   status: string | null;
