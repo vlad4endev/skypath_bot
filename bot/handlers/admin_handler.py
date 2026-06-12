@@ -250,6 +250,12 @@ async def handle_broadcast_text(message: Message, state: FSMContext):
         InlineKeyboardButton(text="✅ Только активным", callback_data="broadcast_confirm:active"),
     )
     builder.row(
+        InlineKeyboardButton(
+            text="✅ Потенциальным клиентам",
+            callback_data="broadcast_confirm:leads",
+        ),
+    )
+    builder.row(
         InlineKeyboardButton(text="❌ Отмена", callback_data="broadcast_cancel")
     )
 
@@ -280,6 +286,9 @@ async def cb_broadcast_confirm(call: CallbackQuery, state: FSMContext, bot: Bot)
                 ).distinct()
             )
             ids = [r[0] for r in result.all()]
+        elif target == "leads":
+            user_repo = UserRepo(session)
+            ids = await user_repo.get_marketing_lead_ids()
         else:
             user_repo = UserRepo(session)
             ids = await user_repo.get_all_ids()

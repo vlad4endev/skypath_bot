@@ -40,6 +40,7 @@ class SyncItemResult:
 class BulkSyncResult:
     processed: int = 0
     updated: int = 0
+    imported: int = 0
     deleted: int = 0
     skipped: int = 0
     errors: int = 0
@@ -51,6 +52,7 @@ class BulkSyncResult:
             "ok": self.errors == 0,
             "processed": self.processed,
             "updated": self.updated,
+            "imported": self.imported,
             "deleted": self.deleted,
             "skipped": self.skipped,
             "errors": self.errors,
@@ -103,15 +105,84 @@ def _traffic_gb_from_panel(client: dict[str, Any]) -> int:
     return int(round(total_bytes / (1024**3)))
 
 
-def _derive_status(sub: Subscription, client: dict[str, Any], expires_at: datetime | None) -> SubscriptionStatus:
+def _derive_plan_from_panel(client: dict[str, Any], status: SubscriptionStatus) -> PlanType:
+    if status == SubscriptionStatus.FREE_TRIAL:
+        return PlanType.FREE
+    limit_ip = int(client.get("limitIp") or 1)
+    if limit_ip >= 10:
+        return PlanType.SUPER
+    if limit_ip >= 5:
+        return PlanType.MULTI
+    return PlanType.BASIC
+
+
+def _derive_status_from_panel(
+    client: dict[str, Any],
+    expires_at: datetime | None,
+    *,
+    plan: PlanType | None = None,
+) -> SubscriptionStatus:
     now = datetime.utcnow()
     if not bool(client.get("enable", True)):
         return SubscriptionStatus.EXPIRED
     if expires_at and expires_at < now:
         return SubscriptionStatus.EXPIRED
-    if sub.plan == PlanType.FREE:
+    if plan == PlanType.FREE:
+        return SubscriptionStatus.FREE_TRIAL
+    traffic_gb = _traffic_gb_from_panel(client)
+    if 0 < traffic_gb <= 10:
         return SubscriptionStatus.FREE_TRIAL
     return SubscriptionStatus.ACTIVE
+
+
+def _derive_status(sub: Subscription, client: dict[str, Any], expires_at: datetime | None) -> SubscriptionStatus:
+    return _derive_status_from_panel(client, expires_at, plan=sub.plan)
+
+
+def _telegram_id_from_panel_client(client: dict[str, Any]) -> int | None:
+    raw = client.get("tgId")
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        telegram_id = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return telegram_id if telegram_id > 0 else None
+
+
+def _client_known_in_db(
+    db_index: dict[str, dict[str, Subscription]],
+    client: dict[str, Any],
+) -> bool:
+    email = str(client.get("email") or "").strip()
+    sub_id = str(client.get("subId") or "").strip()
+    client_uuid = str(client.get("id") or "").strip()
+    if email and email in db_index["by_email"]:
+        return True
+    if sub_id and sub_id in db_index["by_sub_id"]:
+        return True
+    if client_uuid and client_uuid in db_index["by_uuid"]:
+        return True
+    return False
+
+
+def panel_client_fields_for_import(client: dict[str, Any]) -> dict[str, Any]:
+    expires_at = _expiry_from_panel(client)
+    sub_id = str(client.get("subId") or "").strip()
+    status = _derive_status_from_panel(client, expires_at)
+    plan = _derive_plan_from_panel(client, status)
+    return {
+        "plan": plan,
+        "vpn_uuid": str(client.get("id") or "").strip() or None,
+        "vpn_email": str(client.get("email") or "").strip() or None,
+        "vpn_sub_id": sub_id or None,
+        "vpn_key": build_subscription_url(config, sub_id) if sub_id else None,
+        "inbound_id": int(client.get("_inbound_id") or 0) or None,
+        "expires_at": expires_at,
+        "limit_ip": int(client.get("limitIp") or 1),
+        "traffic_gb": _traffic_gb_from_panel(client),
+        "status": status,
+    }
 
 
 def panel_client_fields(client: dict[str, Any], sub: Subscription) -> dict[str, Any]:
@@ -225,6 +296,107 @@ async def bulk_sync_from_xui(
             result.updated += 1
         elif item.action == "deleted":
             result.deleted += 1
+        elif item.action == "skipped":
+            result.skipped += 1
+        elif item.action == "error":
+            result.errors += 1
+
+    return result
+
+
+async def import_panel_client(
+    repo: AdminRepo,
+    client: dict[str, Any],
+    db_index: dict[str, dict[str, Subscription]],
+    *,
+    dry_run: bool,
+) -> SyncItemResult:
+    email = str(client.get("email") or "").strip() or "—"
+
+    if _client_known_in_db(db_index, client):
+        return SyncItemResult(
+            user_id=0,
+            telegram_id=_telegram_id_from_panel_client(client) or 0,
+            action="skipped",
+            message=f"уже в БД ({email})",
+        )
+
+    telegram_id = _telegram_id_from_panel_client(client)
+    if not telegram_id:
+        return SyncItemResult(
+            user_id=0,
+            telegram_id=0,
+            action="skipped",
+            message=f"нет tgId в панели ({email})",
+        )
+
+    fields = panel_client_fields_for_import(client)
+    if dry_run:
+        expires = fields["expires_at"]
+        return SyncItemResult(
+            user_id=0,
+            telegram_id=telegram_id,
+            action="imported",
+            message=(
+                f"будет импортирован: {fields['plan'].value}, "
+                f"{fields['status'].value}, до "
+                f"{expires.strftime('%d.%m.%Y') if expires else '—'}"
+            ),
+        )
+
+    try:
+        user, sub, created_user = await repo.upsert_user_from_panel_client(
+            telegram_id=telegram_id,
+            **fields,
+        )
+    except Exception as e:
+        logger.exception("import_panel_client failed for %s", email)
+        return SyncItemResult(
+            user_id=0,
+            telegram_id=telegram_id,
+            action="error",
+            message=str(e),
+        )
+
+    if fields["vpn_email"]:
+        db_index["by_email"][fields["vpn_email"]] = sub
+    if fields["vpn_sub_id"]:
+        db_index["by_sub_id"][fields["vpn_sub_id"]] = sub
+    if fields["vpn_uuid"]:
+        db_index["by_uuid"][fields["vpn_uuid"]] = sub
+
+    expires = fields["expires_at"]
+    verb = "создан" if created_user else "обновлён"
+    return SyncItemResult(
+        user_id=user.id,
+        telegram_id=telegram_id,
+        subscription_id=sub.id,
+        action="imported",
+        message=(
+            f"пользователь {verb}: {fields['plan'].value}, "
+            f"{fields['status'].value}, до "
+            f"{expires.strftime('%d.%m.%Y') if expires else '—'}"
+        ),
+    )
+
+
+async def bulk_import_from_xui(
+    repo: AdminRepo,
+    *,
+    dry_run: bool = False,
+) -> BulkSyncResult:
+    """Импорт клиентов из 3X-UI, которых нет в админке."""
+    result = BulkSyncResult(dry_run=dry_run)
+    panel_clients = await xui.list_all_clients()
+    db_index = await repo.build_vpn_lookup_index()
+
+    for client in panel_clients:
+        result.processed += 1
+        item = await import_panel_client(repo, client, db_index, dry_run=dry_run)
+        result.items.append(item)
+
+        if item.action == "imported":
+            result.imported += 1
         elif item.action == "skipped":
             result.skipped += 1
         elif item.action == "error":

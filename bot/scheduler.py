@@ -1,5 +1,5 @@
 """
-Планировщик задач — уведомления, деактивация и удаление пробных VPN
+Планировщик задач — уведомления, grace period, деактивация и очистка VPN
 """
 import logging
 from datetime import datetime
@@ -7,9 +7,9 @@ from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from bot.config import Config
+from bot.config import Config, PLANS
 from database.engine import async_session
-from database.repository import SubscriptionRepo, PaymentRepo, ACTIVE_SUBSCRIPTION_STATUSES
+from database.repository import SubscriptionRepo, PaymentRepo, UserRepo, ACTIVE_SUBSCRIPTION_STATUSES
 from database.models import Subscription, SubscriptionStatus, PlanType
 from bot.services.xui_client import XUIClient
 from sqlalchemy import select, and_
@@ -28,8 +28,129 @@ xui = XUIClient(
 )
 
 
+GRACE_PERIOD_DAYS = 7
+# Дни после отключения VPN → очередное напоминание (последний = удаление из 3X-UI)
+GRACE_REMINDER_DAYS = (1, 3, 5, 7)
+
+
 def _is_trial_sub(sub: Subscription) -> bool:
     return sub.plan == PlanType.FREE or sub.status == SubscriptionStatus.FREE_TRIAL
+
+
+def _plan_label(sub: Subscription) -> str:
+    key = sub.plan.value if sub.plan else "BASIC"
+    return PLANS.get(key, {}).get("name", key)
+
+
+def _expiry_date(sub: Subscription) -> str:
+    return sub.expires_at.strftime("%d.%m.%Y") if sub.expires_at else "—"
+
+
+def _msg_expiring_tomorrow_trial(sub: Subscription) -> str:
+    return (
+        f"⏳ <b>Завтра гаснет пробный период</b> — но это ещё не конец!\n\n"
+        f"📅 Финиш: <b>{_expiry_date(sub)}</b>\n\n"
+        f"Ты уже попробовал {config.BRAND_NAME} — оформи подписку от <b>250 ₽/мес</b>, "
+        f"и интернет останется свободным 🌍\n\n"
+        f"Без оплаты доступ закроется — но ключ сохраним на сервере ещё <b>{GRACE_PERIOD_DAYS} дней</b>.\n"
+        f"Кнопка ниже — пара минут, и всё как было ✨"
+    )
+
+
+def _msg_expiring_tomorrow_paid(sub: Subscription) -> str:
+    return (
+        f"🔔 Эй, напоминалочка!\n\n"
+        f"Завтра заканчивается твой тариф <b>{_plan_label(sub)}</b> "
+        f"— до <b>{_expiry_date(sub)}</b>.\n\n"
+        f"Продли сейчас одним нажатием — и не придётся заново настраивать VPN "
+        f"на телефоне, ноуте и планшете 😉"
+    )
+
+
+def _msg_expiring_today_trial(sub: Subscription) -> str:
+    return (
+        f"🚨 <b>Последний рубеж!</b>\n\n"
+        f"Сегодня — финальный день пробного доступа. "
+        f"Без подписки VPN отключится уже сегодня вечером.\n\n"
+        f"От <b>250 ₽/мес</b> — и ты снова в сети без границ.\n"
+        f"Жми «Оформить подписку» — это быстрее, чем заварить чай ☕️"
+    )
+
+
+def _msg_expiring_today_paid(sub: Subscription) -> str:
+    return (
+        f"⏰ <b>Тик-так…</b>\n\n"
+        f"Сегодня последний день твоего <b>{_plan_label(sub)}</b>.\n"
+        f"Завтра утром доступ может пропасть — а YouTube и любимые сериалы "
+        f"этого точно не заслуживают 😅\n\n"
+        f"Продление займёт меньше минуты, ключ останется тот же 🔄"
+    )
+
+
+def _msg_subscription_expired(sub: Subscription) -> str:
+    is_trial = _is_trial_sub(sub)
+    label = "Пробный доступ" if is_trial else _plan_label(sub)
+    return (
+        f"💤 <b>{label} приостановлен</b>\n\n"
+        f"VPN отключён — но у тебя есть <b>{GRACE_PERIOD_DAYS} дней</b>, "
+        f"чтобы вернуться <b>с тем же ключом</b> 🔄\n\n"
+        f"Оформи подписку — и всё снова заработает без перенастройки.\n"
+        f"Через неделю ключ уберём с сервера, но ты останешься с нами — "
+        f"будем присылать акции и новости 📬"
+    )
+
+
+def _days_since_disabled(sub: Subscription) -> int:
+    if not sub.vpn_disabled_at:
+        return 0
+    return (datetime.utcnow() - sub.vpn_disabled_at).days
+
+
+def _grace_days_left(sub: Subscription) -> int:
+    if not sub.vpn_disabled_at:
+        return GRACE_PERIOD_DAYS
+    elapsed = _days_since_disabled(sub)
+    return max(0, GRACE_PERIOD_DAYS - elapsed)
+
+
+def _msg_grace_reminder(sub: Subscription, reminder_index: int) -> str:
+    days_left = _grace_days_left(sub)
+    is_trial = _is_trial_sub(sub)
+    label = "пробный доступ" if is_trial else _plan_label(sub)
+
+    if reminder_index == 0:
+        return (
+            f"👋 Эй, это мы — {config.BRAND_NAME}!\n\n"
+            f"Вчера отключился твой <b>{label}</b>, но ключ ещё ждёт тебя на сервере.\n\n"
+            f"Осталось <b>{days_left} дн.</b> — продли, и VPN оживёт за минуту, "
+            f"без новой настройки ✨"
+        )
+    if reminder_index == 1:
+        return (
+            f"🌧 Скучаем без тебя…\n\n"
+            f"<b>{label}</b> всё ещё можно вернуть — ключ на месте, "
+            f"осталось <b>{days_left} дн.</b>\n\n"
+            f"YouTube, Instagram, любимые сериалы — всё это на расстоянии одного нажатия 📱"
+        )
+    if reminder_index == 2:
+        return (
+            f"⏳ Уже половина grace-периода!\n\n"
+            f"До удаления ключа с сервера — <b>{days_left} дн.</b>\n"
+            f"Потом придётся настраивать заново, а сейчас — просто продли и всё 🔑"
+        )
+    return (
+        f"🚨 <b>Последний день!</b>\n\n"
+        f"Завтра ключ <b>{label}</b> удалим с сервера окончательно.\n"
+        f"Это последний шанс вернуться с тем же подключением — дальше только новый ключ."
+    )
+
+
+def _msg_grace_purged() -> str:
+    return (
+        f"👋 Мы убрали VPN-ключ с сервера — подписка так и не была продлена.\n\n"
+        f"Но ты остаёшься с нами! Иногда будем присылать акции и спецпредложения 📬\n"
+        f"Вернуться можно в любой момент — жми кнопку ниже 💫"
+    )
 
 
 def _renew_kb(is_trial: bool = False):
@@ -73,26 +194,15 @@ async def job_notify_expiring_tomorrow(bot: Bot):
         for sub in subs:
             try:
                 is_trial = _is_trial_sub(sub)
-                if is_trial:
-                    caption = (
-                        f"👋 Привет!\n\n"
-                        f"Завтра заканчивается <b>пробный период</b>.\n\n"
-                        f"📅 Дата окончания: <b>{sub.expires_at.strftime('%d.%m.%Y')}</b>\n\n"
-                        f"Оформи подписку от <b>250 ₽/мес</b>, чтобы VPN продолжил работать.\n"
-                        f"Если не оплатить — доступ будет закрыт, ключ удалён через 3 дня."
-                    )
-                else:
-                    caption = (
-                        f"👋 Привет!\n\n"
-                        f"Завтра истекает твоя подписка <b>{sub.plan.value}</b>.\n\n"
-                        f"📅 Дата истечения: <b>{sub.expires_at.strftime('%d.%m.%Y')}</b>\n\n"
-                        f"Не забудь продлить, чтобы не потерять доступ! 🔒"
-                    )
+                text = (
+                    _msg_expiring_tomorrow_trial(sub)
+                    if is_trial
+                    else _msg_expiring_tomorrow_paid(sub)
+                )
 
-                await bot.send_photo(
+                await bot.send_message(
                     chat_id=sub.telegram_id,
-                    photo="https://disk.yandex.ru/i/u-I6SN_IlTZnZQ",
-                    caption=caption,
+                    text=text,
                     reply_markup=_renew_kb(is_trial=is_trial),
                     parse_mode="HTML",
                 )
@@ -118,22 +228,15 @@ async def job_notify_expiring_today(bot: Bot):
         for sub in subs:
             try:
                 is_trial = _is_trial_sub(sub)
-                if is_trial:
-                    caption = (
-                        f"⚠️ <b>Последний день пробного периода!</b>\n\n"
-                        f"Сегодня доступ к VPN будет закрыт, если не оформить подписку.\n"
-                        f"Нажми «Оформить подписку» — от 250 ₽/мес."
-                    )
-                else:
-                    caption = (
-                        f"⚠️ Сегодня последний день твоей подписки <b>{sub.plan.value}</b>!\n\n"
-                        f"Продли сейчас, чтобы не потерять доступ к VPN. 🔒"
-                    )
+                text = (
+                    _msg_expiring_today_trial(sub)
+                    if is_trial
+                    else _msg_expiring_today_paid(sub)
+                )
 
-                await bot.send_photo(
+                await bot.send_message(
                     chat_id=sub.telegram_id,
-                    photo="https://disk.yandex.ru/i/u-I6SN_IlTZnZQ",
-                    caption=caption,
+                    text=text,
                     reply_markup=_renew_kb(is_trial=is_trial),
                     parse_mode="HTML",
                 )
@@ -194,17 +297,16 @@ async def job_expire_subscriptions(bot: Bot):
                         await sub_repo.expire(s)
                         await sub_repo.mark_vpn_disabled(s)
 
-                if _is_trial_sub(sub):
-                    try:
-                        await bot.send_message(
-                            sub.telegram_id,
-                            "🔒 <b>Пробный период завершён.</b>\n\n"
-                            "VPN отключён. Оформи подписку, чтобы снова подключиться.\n"
-                            "Ключ будет удалён с сервера через 3 дня.",
-                            reply_markup=_renew_kb(is_trial=True),
-                        )
-                    except Exception as e:
-                        logger.warning("Trial expired notify failed %s: %s", sub.telegram_id, e)
+                is_trial = _is_trial_sub(sub)
+                try:
+                    await bot.send_message(
+                        sub.telegram_id,
+                        _msg_subscription_expired(sub),
+                        reply_markup=_renew_kb(is_trial=is_trial),
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.warning("Expired notify failed %s: %s", sub.telegram_id, e)
 
                 logger.info("Expired subscription %s for user %s", sub.id, sub.telegram_id)
             except Exception as e:
@@ -213,33 +315,94 @@ async def job_expire_subscriptions(bot: Bot):
         logger.error("job_expire_subscriptions failed: %s", e)
 
 
-async def job_delete_expired_trial_clients(bot: Bot):
-    """Удалить из 3X-UI клиентов пробного периода через 3 дня после отключения."""
+async def job_grace_period(bot: Bot):
+    """Напоминания в течение недели после истечения + удаление из 3X-UI."""
     try:
         async with async_session() as session:
             sub_repo = SubscriptionRepo(session)
-            subs = await sub_repo.get_free_trials_pending_vpn_deletion()
+            subs = await sub_repo.get_expired_pending_grace_actions()
 
         for sub in subs:
             try:
-                if sub.vpn_uuid and sub.inbound_id:
-                    await xui.delete_client(
-                        inbound_id=sub.inbound_id,
-                        client_uuid=sub.vpn_uuid,
-                        email=sub.vpn_email or "",
+                days_since = _days_since_disabled(sub)
+                sent = sub.grace_reminders_sent or 0
+
+                if days_since > GRACE_PERIOD_DAYS:
+                    await _purge_vpn_client(bot, sub)
+                    continue
+
+                if sent >= len(GRACE_REMINDER_DAYS):
+                    continue
+
+                threshold = GRACE_REMINDER_DAYS[sent]
+                if days_since < threshold:
+                    continue
+
+                is_trial = _is_trial_sub(sub)
+                text = _msg_grace_reminder(sub, sent)
+                if sent == len(GRACE_REMINDER_DAYS) - 1:
+                    await _purge_vpn_client(bot, sub, farewell_text=text)
+                else:
+                    await bot.send_message(
+                        sub.telegram_id,
+                        text,
+                        reply_markup=_renew_kb(is_trial=is_trial),
+                        parse_mode="HTML",
                     )
-
-                async with async_session() as session:
-                    sub_repo = SubscriptionRepo(session)
-                    s = await sub_repo.get_by_id(sub.id)
-                    if s:
-                        await sub_repo.clear_vpn_client(s)
-
-                logger.info("Deleted trial VPN client for sub %s user %s", sub.id, sub.telegram_id)
+                    async with async_session() as session:
+                        sub_repo = SubscriptionRepo(session)
+                        s = await sub_repo.get_by_id(sub.id)
+                        if s:
+                            await sub_repo.increment_grace_reminder(s)
+                    logger.info(
+                        "Grace reminder %s for user %s (day %s)",
+                        sent + 1, sub.telegram_id, days_since,
+                    )
             except Exception as e:
-                logger.error("Error deleting trial VPN sub %s: %s", sub.id, e)
+                logger.error("Grace period error sub %s: %s", sub.id, e)
     except Exception as e:
-        logger.error("job_delete_expired_trial_clients failed: %s", e)
+        logger.error("job_grace_period failed: %s", e)
+
+
+async def _purge_vpn_client(
+    bot: Bot,
+    sub: Subscription,
+    *,
+    farewell_text: str | None = None,
+) -> None:
+    """Удалить клиента из 3X-UI, очистить VPN-поля, оставить user для рассылок."""
+    if sub.vpn_uuid and sub.inbound_id:
+        try:
+            await xui.delete_client(
+                inbound_id=sub.inbound_id,
+                client_uuid=sub.vpn_uuid,
+                email=sub.vpn_email or "",
+            )
+        except Exception as e:
+            logger.warning("XUI delete failed sub %s: %s", sub.id, e)
+
+    async with async_session() as session:
+        sub_repo = SubscriptionRepo(session)
+        user_repo = UserRepo(session)
+        s = await sub_repo.get_by_id(sub.id)
+        if not s or s.vpn_purged_at:
+            return
+        await sub_repo.clear_vpn_client(s)
+        await sub_repo.mark_vpn_purged(s)
+        await user_repo.set_marketing_lead(s.user_id, value=True)
+
+    is_trial = _is_trial_sub(sub)
+    try:
+        await bot.send_message(
+            sub.telegram_id,
+            farewell_text or _msg_grace_purged(),
+            reply_markup=_renew_kb(is_trial=is_trial),
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.warning("Grace purge notify failed %s: %s", sub.telegram_id, e)
+
+    logger.info("Purged VPN for sub %s user %s (marketing lead)", sub.id, sub.telegram_id)
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
@@ -267,10 +430,10 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         replace_existing=True,
     )
     scheduler.add_job(
-        job_delete_expired_trial_clients,
-        CronTrigger(hour=11, minute=0),
+        job_grace_period,
+        CronTrigger(hour=12, minute=0),
         args=[bot],
-        id="delete_trial_vpn",
+        id="grace_period",
         replace_existing=True,
     )
 

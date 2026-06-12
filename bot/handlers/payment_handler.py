@@ -251,6 +251,7 @@ async def _process_successful_payment(
 
         user = await user_repo.get_by_telegram_id(telegram_id)
         active_sub = await sub_repo.get_active(telegram_id)
+        grace_sub = await sub_repo.get_expired_grace_restorable(telegram_id)
 
         if (
             active_sub
@@ -280,6 +281,39 @@ async def _process_successful_payment(
                 paid_str = f"{payment.paid_amount or amount:.0f}" if payment else f"{amount:.0f}"
                 admin_text = (
                     f"💰 <b>Продление подписки!</b>\n\n"
+                    f"👤 {user_name} (<code>{telegram_id}</code>)\n"
+                    f"🧾 Заказ: <code>{payment.order_id if payment else payment_id}</code>\n"
+                    f"📦 Тариф: {plan} / +{months} мес.\n"
+                    f"💵 Сумма: {paid_str} руб."
+                )
+                await bot.send_message(config.ADMIN_NOTIFY_ID, admin_text)
+            except Exception as e:
+                logger.warning("Admin notify failed: %s", e)
+            return
+
+        if grace_sub and grace_sub.vpn_uuid and plan != "FREE":
+            if subscription_id and subscription_id != grace_sub.id:
+                orphan = await sub_repo.get_by_id(subscription_id)
+                if orphan and orphan.status == SubscriptionStatus.PENDING:
+                    await sub_repo.expire(orphan)
+
+            await _extend_paid_subscription(
+                bot=bot,
+                telegram_id=telegram_id,
+                sub=grace_sub,
+                plan=plan or "BASIC",
+                months=months or 1,
+                amount=amount or 0,
+                order_id=payment.order_id if payment else payment_id,
+                payment_db_id=payment.id if payment else payment_db_id,
+            )
+            if user and user.referrer_id:
+                await process_referral_bonus(bot, user, payment_id=payment_id)
+            try:
+                user_name = user.full_name if user else f"User {telegram_id}"
+                paid_str = f"{payment.paid_amount or amount:.0f}" if payment else f"{amount:.0f}"
+                admin_text = (
+                    f"💰 <b>Возвращение после grace!</b>\n\n"
                     f"👤 {user_name} (<code>{telegram_id}</code>)\n"
                     f"🧾 Заказ: <code>{payment.order_id if payment else payment_id}</code>\n"
                     f"📦 Тариф: {plan} / +{months} мес.\n"
