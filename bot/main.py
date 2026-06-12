@@ -85,6 +85,7 @@ def create_app(config: Config) -> web.Application:
     )
     setup_application(app, dp, bot=bot)
 
+    app.router.add_get("/api/config", miniapp_handler.get_config)
     app.router.add_get("/api/user/{telegram_id}", miniapp_handler.get_user_info)
     app.router.add_get("/api/subscription/{telegram_id}", miniapp_handler.get_subscription)
     app.router.add_post("/api/pay", miniapp_handler.create_payment)

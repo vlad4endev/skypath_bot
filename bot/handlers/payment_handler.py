@@ -92,7 +92,7 @@ async def cb_confirm_plan(call: CallbackQuery):
         try:
             payment_data = await yookassa.create_payment(
                 amount=price,
-                description=f"SkyPath VPN — {plan['name']} на {months} мес.",
+                description=f"{config.BRAND_NAME} — {plan['name']} на {months} мес.",
                 metadata={
                     "telegram_id": str(user.id),
                     "plan": plan_key,
@@ -375,6 +375,75 @@ async def _create_vpn_and_notify(
             "Не переживай — мы уже знаем об этом и исправим в ближайшее время.\n"
             f"Напиши в поддержку: {config.SUPPORT_URL}",
         )
+
+
+@router.message(F.web_app_data)
+async def on_web_app_data(message: Message):
+    """Fallback: покупка через tg.sendData из Mini App"""
+    try:
+        data = json.loads(message.web_app_data.data)
+    except (json.JSONDecodeError, TypeError):
+        return
+
+    if data.get("action") != "buy":
+        return
+
+    user = message.from_user
+    if not user:
+        return
+
+    from bot.services.miniapp_purchase import process_miniapp_purchase
+
+    try:
+        result = await process_miniapp_purchase(
+            telegram_id=user.id,
+            plan=data.get("plan", "BASIC"),
+            months=int(data.get("months", 1)),
+            price=int(data.get("price", 0)),
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            bot=message.bot,
+        )
+    except Exception as e:
+        logger.error("web_app_data purchase error: %s", e)
+        await message.answer("❌ Не удалось оформить заказ. Попробуй ещё раз.")
+        return
+
+    if result.get("error"):
+        await message.answer(f"❌ {result.get('message', 'Ошибка оформления')}")
+        return
+
+    if result.get("free_trial"):
+        return
+
+    payment_url = result.get("payment_url")
+    if not payment_url:
+        await message.answer("❌ Не удалось создать ссылку на оплату.")
+        return
+
+    price = int(data.get("price", 0))
+    plan_key = data.get("plan", "BASIC")
+    months = int(data.get("months", 1))
+    plan = PLANS.get(plan_key, PLANS["BASIC"])
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"💳 Оплатить {price} руб.", url=payment_url))
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ Я оплатил",
+            callback_data=f"check_payment:{result.get('payment_id')}",
+        )
+    )
+
+    await message.answer(
+        f"💳 <b>Оплата</b>\n\n"
+        f"📦 Тариф: <b>{plan['name']}</b>\n"
+        f"⏱ Срок: <b>{months} мес.</b>\n"
+        f"💰 Сумма: <b>{price} руб.</b>\n\n"
+        "После оплаты VPN ключ придёт автоматически в этот чат.",
+        reply_markup=builder.as_markup(),
+    )
 
 
 # === Webhook от YooKassa ===

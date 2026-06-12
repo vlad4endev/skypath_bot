@@ -23,11 +23,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
-          python -m py_compile bot/main.py
-          python -m py_compile bot/config.py
-          python -m py_compile bot/handlers/start_handler.py
-          python -m py_compile bot/handlers/payment_handler.py
-          python -m py_compile database/models.py
+          python -m compileall -q bot database
 
       - name: Validate docker-compose
         uses: docker/setup-compose-action@v1
@@ -35,4 +31,5 @@ jobs:
       - name: Check compose file syntax
         run: |
           cp .env.example .env
+          docker network create skypath_bot_skypath_net 2>/dev/null || true
           docker compose config --quiet

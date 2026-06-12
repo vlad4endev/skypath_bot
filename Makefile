@@ -1,19 +1,19 @@
-.PHONY: deploy logs migrate seed build dev
+.PHONY: deploy logs migrate doctor build dev
 
 deploy:
-	docker compose up -d --build
+	./scripts/deploy.sh
 
 logs:
-	docker compose logs -f bot
+	./scripts/logs.sh bot
 
 migrate:
-	docker compose --profile migrate run --rm migrate
+	docker compose exec -T bot alembic upgrade head
 
-seed:
-	docker compose run --rm bot npm run db:seed
+doctor:
+	./scripts/doctor.sh
 
 build:
-	npm run build
+	docker compose build bot
 
 dev:
-	npm run dev
+	python -m bot.main

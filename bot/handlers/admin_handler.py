@@ -61,7 +61,7 @@ async def _build_stats_text() -> str:
         )).scalar()
 
     return f"""
-📊 <b>Статистика SkyPath VPN</b>
+📊 <b>Статистика {config.BRAND_NAME}</b>
 
 👥 Всего пользователей: <b>{total_users}</b>
 🆕 Новых за 24ч: <b>{new_users}</b>

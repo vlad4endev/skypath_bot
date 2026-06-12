@@ -98,7 +98,7 @@ async def cb_account(call: CallbackQuery):
     builder.row(
         InlineKeyboardButton(
             text="🎁 Поделиться — +7 дней за друга",
-            switch_inline_query=f"Попробуй SkyPath VPN — 3 дня бесплатно! {ref_url}",
+            switch_inline_query=f"Попробуй {config.BRAND_NAME} — 3 дня бесплатно! {ref_url}",
         )
     )
     builder.row(InlineKeyboardButton(text="⬅️ Главная", callback_data="main"))

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>SkyPath VPN</title>
+  <title>VPN</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -355,6 +355,20 @@
     .info-row + .info-row { border-top: 1px solid var(--border); }
     .info-key { font-size: 13px; color: var(--muted); }
     .info-val { font-size: 13px; font-weight: 600; }
+
+    .app-footer {
+      text-align: center;
+      padding: 12px 20px 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    .app-footer span {
+      background: linear-gradient(90deg, var(--sky), #fff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
   </style>
 </head>
 <body>
@@ -363,7 +377,7 @@
   <header class="header">
     <div class="logo">
       <div class="logo-icon">🛡</div>
-      <span class="logo-text">SkyPath VPN</span>
+      <span class="logo-text" id="brandName">VPN</span>
     </div>
     <div class="user-badge" id="userBadge">...</div>
   </header>
@@ -415,12 +429,16 @@
 
   </section>
 
+  <footer class="app-footer"><span id="footerBrand">VPN</span></footer>
+
 </div>
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
 <script>
+  let BRAND_NAME = 'VPN';
+
   const tg = window.Telegram?.WebApp;
   if (tg) {
     tg.ready();
@@ -446,8 +464,27 @@
 
   const MONTHS_LABELS = {1:'1 месяц',2:'2 месяца',3:'3 месяца',6:'6 месяцев',12:'Год'};
 
+  function applyBrand(name) {
+    BRAND_NAME = name || BRAND_NAME;
+    document.title = BRAND_NAME;
+    document.getElementById('brandName').textContent = BRAND_NAME;
+    document.getElementById('footerBrand').textContent = BRAND_NAME;
+  }
+
+  async function loadConfig() {
+    try {
+      const r = await fetch(`${API_BASE}/config`);
+      if (r.ok) {
+        const cfg = await r.json();
+        applyBrand(cfg.brand_name);
+      }
+    } catch { /* offline / dev */ }
+  }
+
   // === INIT ===
   async function init() {
+    await loadConfig();
+
     const user = tg?.initDataUnsafe?.user;
     document.getElementById('userBadge').textContent = user?.first_name ? `@${user.username || user.first_name}` : `ID ${telegramId}`;
 
@@ -724,21 +761,52 @@
   async function handleBuy() {
     const plan = PLANS[selectedPlan];
     const price = plan.prices ? plan.prices[selectedMonths] : 0;
+    const user = tg?.initDataUnsafe?.user;
+    const btn = document.getElementById('buyBtn');
 
     tg?.HapticFeedback?.impactOccurred('medium');
+    btn.disabled = true;
 
-    // Отправляем данные в бот
-    if (tg?.sendData) {
-      tg.sendData(JSON.stringify({
-        action: 'buy',
-        plan: selectedPlan,
-        months: selectedMonths,
-        price: price,
-        telegram_id: telegramId,
-      }));
-    } else {
-      // Fallback — открываем бота
-      window.open(`https://t.me/bot?start=buy_${selectedPlan}_${selectedMonths}`, '_blank');
+    try {
+      const r = await fetch(`${API_BASE}/pay`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegram_id: Number(telegramId),
+          plan: selectedPlan,
+          months: selectedMonths,
+          price: price,
+          username: user?.username,
+          first_name: user?.first_name,
+          last_name: user?.last_name,
+        }),
+      });
+
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data.message || data.error || 'Не удалось оформить заказ');
+      }
+
+      if (data.free_trial) {
+        showToast('✅ ' + (data.message || 'Пробный период активирован'));
+        await loadHomeData();
+        showTab('keys');
+        return;
+      }
+
+      if (data.payment_url) {
+        showToast('💳 Открой оплату — ключ придёт в бот');
+        if (tg?.openLink) tg.openLink(data.payment_url);
+        else window.open(data.payment_url, '_blank');
+        setTimeout(() => tg?.close(), 500);
+        return;
+      }
+
+      throw new Error('Пустой ответ сервера');
+    } catch (e) {
+      showToast('❌ ' + (e.message || 'Ошибка'));
+    } finally {
+      btn.disabled = false;
     }
   }
 
