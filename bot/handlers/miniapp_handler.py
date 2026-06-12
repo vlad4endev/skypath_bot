@@ -6,6 +6,7 @@ from aiohttp import web
 from aiogram import Router
 
 from bot.config import Config, PLANS, MONTHS_LABELS
+from bot.services.discount_service import calculate_discount, preview_discounts_for_plan
 from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
 from bot.services.payment_processor import process_manual_check
 from bot.services.subscription_url import resolve_subscription_url
@@ -213,6 +214,7 @@ async def create_payment(request: web.Request) -> web.Response:
         plan = data.get("plan", "BASIC")
         months = int(data.get("months", 1))
         price = int(data.get("price", 250))
+        promo_code = (data.get("promo_code") or "").strip().upper() or None
 
         bot = request.app.get("bot")
         result = await process_miniapp_purchase(
@@ -220,6 +222,7 @@ async def create_payment(request: web.Request) -> web.Response:
             plan=plan,
             months=months,
             price=price,
+            promo_code=promo_code,
             username=data.get("username"),
             first_name=data.get("first_name"),
             last_name=data.get("last_name"),
@@ -232,9 +235,81 @@ async def create_payment(request: web.Request) -> web.Response:
 
         return web.json_response(result)
 
+    except ValueError as e:
+        return web.json_response({"error": "invalid_discount", "message": str(e)}, status=400)
     except Exception as e:
         logger.error("Create payment error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
+
+
+async def preview_discount(request: web.Request) -> web.Response:
+    """Предпросмотр цен со скидками для тарифа."""
+    try:
+        telegram_id = int(request.match_info["telegram_id"])
+        plan = request.query.get("plan", "BASIC")
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_request"}, status=400)
+
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        db_user, is_new_user = await user_repo.get_or_create(telegram_id=telegram_id)
+        data = await preview_discounts_for_plan(
+            session,
+            telegram_id=telegram_id,
+            user_id=db_user.id,
+            plan_key=plan,
+            is_new_user=is_new_user,
+        )
+    return web.json_response(data)
+
+
+async def validate_promo(request: web.Request) -> web.Response:
+    """Проверить промокод для тарифа и срока."""
+    try:
+        data = await request.json()
+        telegram_id = int(data.get("telegram_id", 0))
+        plan = data.get("plan", "BASIC")
+        months = int(data.get("months", 1))
+        promo_code = (data.get("promo_code") or "").strip().upper()
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_request"}, status=400)
+
+    if not telegram_id or not promo_code:
+        return web.json_response({"error": "telegram_id and promo_code required"}, status=400)
+
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        db_user, is_new_user = await user_repo.get_or_create(
+            telegram_id=telegram_id,
+            username=data.get("username"),
+            first_name=data.get("first_name"),
+            last_name=data.get("last_name"),
+        )
+        discount = await calculate_discount(
+            session,
+            telegram_id=telegram_id,
+            user_id=db_user.id,
+            plan_key=plan,
+            months=months,
+            promo_code=promo_code,
+            is_new_user=is_new_user,
+        )
+
+    if not discount.ok:
+        return web.json_response(
+            {"valid": False, "error": discount.error or "Промокод недействителен"},
+            status=400,
+        )
+
+    return web.json_response({
+        "valid": True,
+        "base_price": discount.base_price,
+        "final_price": discount.final_price,
+        "discount_total": discount.discount_total,
+        "promo_code": discount.promo_code,
+        "promotion_name": discount.promotion_name,
+        "discount_label": discount.discount_label,
+    })
 
 
 async def provision_vpn(request: web.Request) -> web.Response:

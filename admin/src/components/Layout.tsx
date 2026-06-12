@@ -4,6 +4,7 @@ import {
   Users,
   CreditCard,
   Tag,
+  Percent,
   LogOut,
   Server,
 } from 'lucide-react';
@@ -14,6 +15,7 @@ const nav = [
   { to: '/', icon: LayoutDashboard, label: 'Дашборд' },
   { to: '/users', icon: Users, label: 'Пользователи' },
   { to: '/payments', icon: CreditCard, label: 'Платежи' },
+  { to: '/promotions', icon: Percent, label: 'Акции' },
   { to: '/promos', icon: Tag, label: 'Промокоды' },
 ];
 

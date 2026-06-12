@@ -13,6 +13,7 @@ from database.models import (
     PaymentStatus,
     PlanType,
     PromoCode,
+    Promotion,
     Subscription,
     SubscriptionStatus,
     User,
@@ -351,6 +352,98 @@ class AdminRepo:
             for user in users
         ]
 
+    async def build_vpn_lookup_index(self) -> dict[str, Any]:
+        """Индекс VPN-подписок в БД для сопоставления с клиентами панели."""
+        result = await self.session.execute(select(Subscription))
+        subs = list(result.scalars().all())
+        by_email: dict[str, Subscription] = {}
+        by_sub_id: dict[str, Subscription] = {}
+        by_uuid: dict[str, Subscription] = {}
+
+        for sub in subs:
+            if sub.vpn_email:
+                by_email[sub.vpn_email.strip()] = sub
+            if sub.vpn_sub_id:
+                by_sub_id[sub.vpn_sub_id.strip()] = sub
+            if sub.vpn_uuid:
+                by_uuid[sub.vpn_uuid.strip()] = sub
+
+        return {
+            "by_email": by_email,
+            "by_sub_id": by_sub_id,
+            "by_uuid": by_uuid,
+        }
+
+    async def upsert_user_from_panel_client(
+        self,
+        *,
+        telegram_id: int,
+        plan: PlanType,
+        vpn_uuid: str | None,
+        vpn_email: str | None,
+        vpn_sub_id: str | None,
+        vpn_key: str | None,
+        inbound_id: int | None,
+        expires_at: datetime | None,
+        limit_ip: int,
+        traffic_gb: int,
+        status: SubscriptionStatus,
+    ) -> tuple[User, Subscription, bool]:
+        """Создать пользователя и подписку из клиента 3X-UI. bool = новый пользователь."""
+        user = await self.get_user_by_telegram(telegram_id)
+        created_user = False
+        if not user:
+            user = User(telegram_id=telegram_id)
+            self.session.add(user)
+            await self.session.flush()
+            created_user = True
+        else:
+            user = await self.get_user_detail(user.id)
+            if not user:
+                raise RuntimeError(f"User {telegram_id} disappeared during import")
+
+        sub = self._pick_primary_subscription(list(user.subscriptions))
+        if sub:
+            await self.apply_panel_client_to_subscription(
+                sub.id,
+                plan=plan,
+                vpn_uuid=vpn_uuid,
+                vpn_email=vpn_email,
+                vpn_sub_id=vpn_sub_id,
+                vpn_key=vpn_key,
+                inbound_id=inbound_id,
+                expires_at=expires_at,
+                limit_ip=limit_ip,
+                traffic_gb=traffic_gb,
+                status=status,
+            )
+            refreshed = await self.get_subscription(sub.id)
+            if not refreshed:
+                raise RuntimeError(f"Subscription {sub.id} missing after panel import")
+            return user, refreshed, created_user
+
+        sub = Subscription(
+            user_id=user.id,
+            telegram_id=telegram_id,
+            plan=plan,
+            status=status,
+            started_at=datetime.utcnow(),
+            expires_at=expires_at,
+            limit_ip=limit_ip,
+            traffic_gb=traffic_gb,
+            vpn_uuid=vpn_uuid,
+            vpn_email=vpn_email,
+            vpn_sub_id=vpn_sub_id,
+            vpn_key=vpn_key,
+            inbound_id=inbound_id,
+            months_paid=0 if plan == PlanType.FREE else 1,
+        )
+        self.session.add(sub)
+        await self.session.commit()
+        await self.session.refresh(sub)
+        await self.session.refresh(user)
+        return user, sub, created_user
+
     async def apply_panel_client_to_subscription(
         self,
         sub_id: int,
@@ -364,11 +457,14 @@ class AdminRepo:
         limit_ip: int,
         traffic_gb: int,
         status: SubscriptionStatus,
+        plan: PlanType | None = None,
     ) -> Subscription | None:
         sub = await self.get_subscription(sub_id)
         if not sub:
             return None
 
+        if plan is not None:
+            sub.plan = plan
         sub.vpn_uuid = vpn_uuid
         sub.vpn_email = vpn_email
         sub.vpn_sub_id = vpn_sub_id
@@ -642,16 +738,30 @@ class AdminRepo:
         self,
         *,
         code: str,
+        name: str | None = None,
+        description: str | None = None,
         discount_pct: int = 0,
         discount_amount: int = 0,
+        plans: list | None = None,
+        months: list | None = None,
+        min_amount: int = 0,
         max_uses: int = 1,
+        one_per_user: bool = True,
+        is_active: bool = True,
         expires_at: datetime | None = None,
     ) -> PromoCode:
         promo = PromoCode(
             code=code.upper().strip(),
+            name=name,
+            description=description,
             discount_pct=discount_pct,
             discount_amount=discount_amount,
+            plans=plans,
+            months=months,
+            min_amount=min_amount,
             max_uses=max_uses,
+            one_per_user=one_per_user,
+            is_active=is_active,
             expires_at=expires_at,
         )
         self.session.add(promo)
@@ -673,6 +783,45 @@ class AdminRepo:
     async def delete_promo(self, promo_id: int) -> bool:
         result = await self.session.execute(
             delete(PromoCode).where(PromoCode.id == promo_id)
+        )
+        await self.session.commit()
+        return result.rowcount > 0
+
+    # ── Promotions ─────────────────────────────────────────────
+
+    async def list_promotions(self) -> list[Promotion]:
+        result = await self.session.execute(
+            select(Promotion).order_by(Promotion.priority.desc(), Promotion.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_promotion(self, promotion_id: int) -> Promotion | None:
+        result = await self.session.execute(
+            select(Promotion).where(Promotion.id == promotion_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_promotion(self, **fields) -> Promotion:
+        promotion = Promotion(**fields)
+        self.session.add(promotion)
+        await self.session.commit()
+        await self.session.refresh(promotion)
+        return promotion
+
+    async def update_promotion(self, promotion_id: int, **fields) -> Promotion | None:
+        promotion = await self.get_promotion(promotion_id)
+        if not promotion:
+            return None
+        for key, val in fields.items():
+            if hasattr(promotion, key):
+                setattr(promotion, key, val)
+        await self.session.commit()
+        await self.session.refresh(promotion)
+        return promotion
+
+    async def delete_promotion(self, promotion_id: int) -> bool:
+        result = await self.session.execute(
+            delete(Promotion).where(Promotion.id == promotion_id)
         )
         await self.session.commit()
         return result.rowcount > 0

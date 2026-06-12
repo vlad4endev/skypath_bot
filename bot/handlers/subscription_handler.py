@@ -9,8 +9,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from bot.config import Config, PLANS, MONTHS_LABELS
+from bot.services.discount_service import calculate_discount
 from database.engine import async_session
-from database.repository import SubscriptionRepo, PromoRepo
+from database.repository import SubscriptionRepo, UserRepo
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -215,14 +216,28 @@ async def handle_promo_input(message: Message, state: FSMContext):
     price = int(data["price"])
 
     async with async_session() as session:
-        promo_repo = PromoRepo(session)
-        promo = await promo_repo.get_by_code(promo_code)
+        user_repo = UserRepo(session)
+        db_user, is_new_user = await user_repo.get_or_create(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        discount = await calculate_discount(
+            session,
+            telegram_id=message.from_user.id,
+            user_id=db_user.id,
+            plan_key=plan_key,
+            months=months,
+            promo_code=promo_code,
+            is_new_user=is_new_user,
+        )
 
     builder = InlineKeyboardBuilder()
 
-    if not promo or not promo.is_valid:
-        text = f"❌ Промокод <b>{promo_code}</b> недействителен или уже использован.\n\n"
-        text += f"Продолжить без скидки?"
+    if not discount.ok:
+        text = f"❌ {discount.error or 'Промокод недействителен'}\n\n"
+        text += "Продолжить без промокода?"
         builder.row(
             InlineKeyboardButton(
                 text=f"💳 Оплатить без скидки ({price} руб.)",
@@ -231,29 +246,20 @@ async def handle_promo_input(message: Message, state: FSMContext):
         )
         builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select_plan:{plan_key}"))
     else:
-        # Считаем скидку
-        if promo.discount_pct:
-            new_price = int(price * (1 - promo.discount_pct / 100))
-            discount_text = f"{promo.discount_pct}%"
-        elif promo.discount_amount:
-            new_price = max(1, price - promo.discount_amount)
-            discount_text = f"{promo.discount_amount}₽"
-        else:
-            new_price = price
-            discount_text = "0%"
-
-        await state.update_data(promo_code=promo_code, promo_discount=discount_text, new_price=new_price)
+        new_price = discount.final_price
+        discount_text = discount.discount_label or f"−{discount.discount_total}₽"
+        promo_suffix = f":promo_{discount.promo_code}" if discount.promo_code else ""
 
         text = f"""
-✅ Промокод <b>{promo_code}</b> применён!
+✅ Скидка применена!
 
-💰 Цена: ~~{price}~~ → <b>{new_price} руб.</b>
-🎁 Скидка: <b>{discount_text}</b>
+💰 Цена: ~~{discount.base_price}~~ → <b>{new_price} руб.</b>
+🎁 {discount_text}
 """
         builder.row(
             InlineKeyboardButton(
-                text=f"💳 Оплатить со скидкой {new_price} руб.",
-                callback_data=f"confirm_plan:{plan_key}:{months}:{new_price}:promo_{promo_code}",
+                text=f"💳 Оплатить {new_price} руб.",
+                callback_data=f"confirm_plan:{plan_key}:{months}:{new_price}{promo_suffix}",
             )
         )
         builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"select_plan:{plan_key}"))

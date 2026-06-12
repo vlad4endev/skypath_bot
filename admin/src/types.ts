@@ -18,6 +18,7 @@ export interface DashboardStats {
     pending: number;
   };
   promos: { active: number };
+  promotions?: { active: number };
   updated_at?: string;
 }
 
@@ -136,6 +137,9 @@ export interface PaymentRow {
   plan: string | null;
   months: number | null;
   promo_code: string | null;
+  promotion_id: number | null;
+  original_amount: number | null;
+  discount_amount: number | null;
   created_at: string | null;
   paid_at: string | null;
   fulfilled_at: string | null;
@@ -145,13 +149,38 @@ export interface PaymentRow {
 export interface PromoRow {
   id: number;
   code: string;
+  name: string | null;
+  description: string | null;
   discount_pct: number | null;
   discount_amount: number | null;
+  plans: string[] | null;
+  months: string[] | null;
+  min_amount: number | null;
   max_uses: number | null;
   uses_count: number;
+  one_per_user: boolean;
   is_active: boolean;
   is_valid: boolean;
   expires_at: string | null;
+  created_at: string | null;
+}
+
+export interface PromotionRow {
+  id: number;
+  name: string;
+  description: string | null;
+  discount_pct: number | null;
+  discount_amount: number | null;
+  plans: string[] | null;
+  months: string[] | null;
+  min_amount: number | null;
+  new_users_only: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  is_active: boolean;
+  is_valid: boolean;
+  priority: number;
+  stackable_with_promo: boolean;
   created_at: string | null;
 }
 
@@ -174,6 +203,7 @@ export interface AdminConfig {
 export interface XuiSyncResult {
   processed: number;
   updated: number;
+  imported?: number;
   deleted: number;
   skipped: number;
   errors: number;

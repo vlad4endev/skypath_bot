@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import (
     BigInteger, String, DateTime, Enum, Boolean,
-    Integer, Float, Text, ForeignKey, Index
+    Integer, Float, Text, ForeignKey, Index, JSON
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -49,6 +49,7 @@ class User(Base):
     is_bot: Mapped[bool] = mapped_column(Boolean, default=False)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     referrer_id: Mapped[int | None] = mapped_column(BigInteger)
+    is_marketing_lead: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -99,8 +100,10 @@ class Subscription(Base):
     notified_1day: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_expired: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # VPN lifecycle (пробный период: отключение → удаление через 3 дня)
+    # VPN lifecycle: отключение → напоминания 7 дней → удаление из 3X-UI
     vpn_disabled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    grace_reminders_sent: Mapped[int] = mapped_column(Integer, default=0)
+    vpn_purged_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -153,6 +156,9 @@ class Payment(Base):
     plan: Mapped[str | None] = mapped_column(String(16))
     months: Mapped[int] = mapped_column(Integer, default=1)
     promo_code: Mapped[str | None] = mapped_column(String(32))
+    promotion_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("promotions.id"))
+    original_amount: Mapped[float | None] = mapped_column(Float)
+    discount_amount: Mapped[float | None] = mapped_column(Float)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -168,16 +174,54 @@ class Payment(Base):
     )
 
 
+class Promotion(Base):
+    """Акции — автоматические скидки при оплате"""
+    __tablename__ = "promotions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(String(512))
+    discount_pct: Mapped[int] = mapped_column(Integer, default=0)
+    discount_amount: Mapped[int] = mapped_column(Integer, default=0)
+    plans: Mapped[list | None] = mapped_column(JSON)
+    months: Mapped[list | None] = mapped_column(JSON)
+    min_amount: Mapped[int] = mapped_column(Integer, default=0)
+    new_users_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    stackable_with_promo: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    @property
+    def is_valid(self) -> bool:
+        if not self.is_active:
+            return False
+        now = datetime.utcnow()
+        if self.starts_at and self.starts_at > now:
+            return False
+        if self.ends_at and self.ends_at < now:
+            return False
+        return True
+
+
 class PromoCode(Base):
-    """Промокоды"""
+    """Промокоды — вводятся пользователем при оплате"""
     __tablename__ = "promo_codes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    name: Mapped[str | None] = mapped_column(String(128))
+    description: Mapped[str | None] = mapped_column(String(512))
     discount_pct: Mapped[int] = mapped_column(Integer, default=0)
     discount_amount: Mapped[int] = mapped_column(Integer, default=0)
+    plans: Mapped[list | None] = mapped_column(JSON)
+    months: Mapped[list | None] = mapped_column(JSON)
+    min_amount: Mapped[int] = mapped_column(Integer, default=0)
     max_uses: Mapped[int] = mapped_column(Integer, default=1)
     uses_count: Mapped[int] = mapped_column(Integer, default=0)
+    one_per_user: Mapped[bool] = mapped_column(Boolean, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -191,6 +235,22 @@ class PromoCode(Base):
         if self.expires_at and self.expires_at < datetime.utcnow():
             return False
         return True
+
+
+class PromoCodeUsage(Base):
+    """История использования промокодов (лимит на пользователя)"""
+    __tablename__ = "promo_code_usages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    promo_code_id: Mapped[int] = mapped_column(Integer, ForeignKey("promo_codes.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    payment_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("payments.id"))
+    used_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_promo_usage_code_user", "promo_code_id", "user_id"),
+    )
 
 
 class Broadcast(Base):

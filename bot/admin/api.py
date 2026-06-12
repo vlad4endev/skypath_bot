@@ -22,6 +22,7 @@ from database.models import (
     Subscription,
     Payment,
     PromoCode,
+    Promotion,
 )
 from database.repository import UserRepo
 
@@ -104,6 +105,9 @@ def _payment_json(p: Payment) -> dict[str, Any]:
         "plan": p.plan,
         "months": p.months,
         "promo_code": p.promo_code,
+        "promotion_id": p.promotion_id,
+        "original_amount": p.original_amount,
+        "discount_amount": p.discount_amount,
         "created_at": _dt(p.created_at),
         "paid_at": _dt(p.paid_at),
         "webhook_received_at": _dt(p.webhook_received_at),
@@ -116,15 +120,61 @@ def _promo_json(p: PromoCode) -> dict[str, Any]:
     return {
         "id": p.id,
         "code": p.code,
+        "name": p.name,
+        "description": p.description,
         "discount_pct": p.discount_pct,
         "discount_amount": p.discount_amount,
+        "plans": p.plans,
+        "months": p.months,
+        "min_amount": p.min_amount,
         "max_uses": p.max_uses,
         "uses_count": p.uses_count,
+        "one_per_user": p.one_per_user,
         "is_active": p.is_active,
         "is_valid": p.is_valid,
         "expires_at": _dt(p.expires_at),
         "created_at": _dt(p.created_at),
     }
+
+
+def _promotion_json(p: Promotion) -> dict[str, Any]:
+    return {
+        "id": p.id,
+        "name": p.name,
+        "description": p.description,
+        "discount_pct": p.discount_pct,
+        "discount_amount": p.discount_amount,
+        "plans": p.plans,
+        "months": p.months,
+        "min_amount": p.min_amount,
+        "new_users_only": p.new_users_only,
+        "starts_at": _dt(p.starts_at),
+        "ends_at": _dt(p.ends_at),
+        "is_active": p.is_active,
+        "is_valid": p.is_valid,
+        "priority": p.priority,
+        "stackable_with_promo": p.stackable_with_promo,
+        "created_at": _dt(p.created_at),
+    }
+
+
+def _parse_dt(value: Any) -> datetime | None:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value).replace("Z", ""))
+
+
+def _parse_str_list(value: Any) -> list | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, list):
+        return [str(v) for v in value if v]
+    if isinstance(value, str):
+        items = [part.strip() for part in value.split(",") if part.strip()]
+        return items or None
+    return None
 
 
 def _json(data: Any, status: int = 200) -> web.Response:
@@ -470,6 +520,23 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
 
         return _json(result.to_dict())
 
+    async def xui_import(request: web.Request) -> web.Response:
+        """Импорт клиентов из 3X-UI, которых нет в админке."""
+        from bot.services.xui_sync import bulk_import_from_xui
+
+        body = await _body(request)
+        dry_run = bool(body.get("dry_run"))
+
+        try:
+            async with async_session() as session:
+                repo = AdminRepo(session)
+                result = await bulk_import_from_xui(repo, dry_run=dry_run)
+        except Exception as e:
+            logger.exception("xui_import failed")
+            return _json({"ok": False, "error": str(e)}, status=502)
+
+        return _json(result.to_dict())
+
     async def user_sync_xui(request: web.Request) -> web.Response:
         """Синхронизация одного пользователя с 3X-UI."""
         from bot.services.xui_sync import bulk_sync_from_xui
@@ -592,36 +659,43 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         code = body.get("code", "").strip()
         if not code:
             return _error("code required")
-        expires_at = None
-        if body.get("expires_at"):
-            expires_at = datetime.fromisoformat(body["expires_at"].replace("Z", ""))
         async with async_session() as session:
             repo = AdminRepo(session)
             promo = await repo.create_promo(
                 code=code,
+                name=body.get("name"),
+                description=body.get("description"),
                 discount_pct=int(body.get("discount_pct", 0)),
                 discount_amount=int(body.get("discount_amount", 0)),
+                plans=_parse_str_list(body.get("plans")),
+                months=_parse_str_list(body.get("months")),
+                min_amount=int(body.get("min_amount", 0)),
                 max_uses=int(body.get("max_uses", 1)),
-                expires_at=expires_at,
+                one_per_user=bool(body.get("one_per_user", True)),
+                is_active=bool(body.get("is_active", True)),
+                expires_at=_parse_dt(body.get("expires_at")),
             )
         return _json(_promo_json(promo), 201)
 
     async def promos_update(request: web.Request) -> web.Response:
         promo_id = int(request.match_info["promo_id"])
         body = await _body(request)
-        expires_at = body.get("expires_at")
-        if expires_at:
-            expires_at = datetime.fromisoformat(expires_at.replace("Z", ""))
+        fields: dict[str, Any] = {}
+        for key in (
+            "name", "description", "discount_pct", "discount_amount",
+            "min_amount", "max_uses", "one_per_user", "is_active",
+        ):
+            if key in body:
+                fields[key] = body[key]
+        if "plans" in body:
+            fields["plans"] = _parse_str_list(body.get("plans"))
+        if "months" in body:
+            fields["months"] = _parse_str_list(body.get("months"))
+        if "expires_at" in body:
+            fields["expires_at"] = _parse_dt(body.get("expires_at"))
         async with async_session() as session:
             repo = AdminRepo(session)
-            promo = await repo.update_promo(
-                promo_id,
-                discount_pct=body.get("discount_pct"),
-                discount_amount=body.get("discount_amount"),
-                max_uses=body.get("max_uses"),
-                is_active=body.get("is_active"),
-                expires_at=expires_at if body.get("expires_at") else None,
-            )
+            promo = await repo.update_promo(promo_id, **fields)
         if not promo:
             return _error("Promo not found", 404)
         return _json(_promo_json(promo))
@@ -633,6 +707,73 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
             ok = await repo.delete_promo(promo_id)
         if not ok:
             return _error("Promo not found", 404)
+        return _json({"ok": True})
+
+    # ── Promotions (акции) ─────────────────────────────────────
+
+    async def promotions_list(request: web.Request) -> web.Response:
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            items = await repo.list_promotions()
+        return _json([_promotion_json(p) for p in items])
+
+    async def promotions_create(request: web.Request) -> web.Response:
+        body = await _body(request)
+        name = (body.get("name") or "").strip()
+        if not name:
+            return _error("name required")
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            promotion = await repo.create_promotion(
+                name=name,
+                description=body.get("description"),
+                discount_pct=int(body.get("discount_pct", 0)),
+                discount_amount=int(body.get("discount_amount", 0)),
+                plans=_parse_str_list(body.get("plans")),
+                months=_parse_str_list(body.get("months")),
+                min_amount=int(body.get("min_amount", 0)),
+                new_users_only=bool(body.get("new_users_only", False)),
+                starts_at=_parse_dt(body.get("starts_at")),
+                ends_at=_parse_dt(body.get("ends_at")),
+                is_active=bool(body.get("is_active", True)),
+                priority=int(body.get("priority", 0)),
+                stackable_with_promo=bool(body.get("stackable_with_promo", False)),
+            )
+        return _json(_promotion_json(promotion), 201)
+
+    async def promotions_update(request: web.Request) -> web.Response:
+        promotion_id = int(request.match_info["promotion_id"])
+        body = await _body(request)
+        fields: dict[str, Any] = {}
+        for key in (
+            "name", "description", "discount_pct", "discount_amount",
+            "min_amount", "new_users_only", "is_active", "priority",
+            "stackable_with_promo",
+        ):
+            if key in body:
+                fields[key] = body[key]
+        if "plans" in body:
+            fields["plans"] = _parse_str_list(body.get("plans"))
+        if "months" in body:
+            fields["months"] = _parse_str_list(body.get("months"))
+        if "starts_at" in body:
+            fields["starts_at"] = _parse_dt(body.get("starts_at"))
+        if "ends_at" in body:
+            fields["ends_at"] = _parse_dt(body.get("ends_at"))
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            promotion = await repo.update_promotion(promotion_id, **fields)
+        if not promotion:
+            return _error("Promotion not found", 404)
+        return _json(_promotion_json(promotion))
+
+    async def promotions_delete(request: web.Request) -> web.Response:
+        promotion_id = int(request.match_info["promotion_id"])
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            ok = await repo.delete_promotion(promotion_id)
+        if not ok:
+            return _error("Promotion not found", 404)
         return _json({"ok": True})
 
     # ── Config reference ───────────────────────────────────────
@@ -666,6 +807,7 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         web.post("/admin/api/users/{user_id}/sync-xui", user_sync_xui),
         web.get("/admin/api/xui/status", xui_status),
         web.post("/admin/api/xui/sync", xui_sync),
+        web.post("/admin/api/xui/import", xui_import),
         web.get("/admin/api/subscriptions", subs_list),
         web.get("/admin/api/subscriptions/{sub_id}", subs_detail),
         web.post("/admin/api/subscriptions", subs_create),
@@ -680,6 +822,10 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         web.post("/admin/api/promos", promos_create),
         web.patch("/admin/api/promos/{promo_id}", promos_update),
         web.delete("/admin/api/promos/{promo_id}", promos_delete),
+        web.get("/admin/api/promotions", promotions_list),
+        web.post("/admin/api/promotions", promotions_create),
+        web.patch("/admin/api/promotions/{promotion_id}", promotions_update),
+        web.delete("/admin/api/promotions/{promotion_id}", promotions_delete),
     ]
     app.router.add_routes(routes)
 
@@ -701,7 +847,7 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
 
         app.router.add_get("/admin", _redirect_admin)
         app.router.add_get("/admin/", _serve_admin_spa)
-        for sub_path in ("users", "payments", "promos"):
+        for sub_path in ("users", "payments", "promos", "promotions"):
             app.router.add_get(f"/admin/{sub_path}", _serve_admin_spa)
             app.router.add_get(f"/admin/{sub_path}/", _serve_admin_spa)
         logger.info("Admin panel (React): %s", admin_index)

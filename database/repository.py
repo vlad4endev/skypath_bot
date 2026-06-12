@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import select, update, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.models import User, Subscription, Payment, PromoCode, SubscriptionStatus, PaymentStatus, PlanType
+from database.models import User, Subscription, Payment, PromoCode, PromoCodeUsage, Promotion, SubscriptionStatus, PaymentStatus, PlanType
 
 ACTIVE_SUBSCRIPTION_STATUSES = (SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL)
 
@@ -67,6 +67,18 @@ class UserRepo:
     async def get_all_ids(self) -> list[int]:
         result = await self.session.execute(select(User.telegram_id))
         return [r[0] for r in result.all()]
+
+    async def get_marketing_lead_ids(self) -> list[int]:
+        result = await self.session.execute(
+            select(User.telegram_id).where(User.is_marketing_lead == True)  # noqa: E712
+        )
+        return [r[0] for r in result.all()]
+
+    async def set_marketing_lead(self, user_id: int, *, value: bool = True) -> None:
+        user = await self.get_by_id(user_id)
+        if user and user.is_marketing_lead != value:
+            user.is_marketing_lead = value
+            await self.session.commit()
 
 
 class SubscriptionRepo:
@@ -154,9 +166,13 @@ class SubscriptionRepo:
         sub.vpn_key = vpn_key
         sub.inbound_id = inbound_id
         sub.vpn_disabled_at = None
+        sub.grace_reminders_sent = 0
+        sub.vpn_purged_at = None
         sub.updated_at = datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(sub)
+        user_repo = UserRepo(self.session)
+        await user_repo.set_marketing_lead(sub.user_id, value=False)
         return sub
 
     async def extend_days(self, sub: Subscription, days: int) -> Subscription:
@@ -165,9 +181,14 @@ class SubscriptionRepo:
         sub.status = SubscriptionStatus.ACTIVE
         sub.notified_1day = False
         sub.notified_expired = False
+        sub.grace_reminders_sent = 0
+        sub.vpn_purged_at = None
+        sub.vpn_disabled_at = None
         sub.updated_at = datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(sub)
+        user_repo = UserRepo(self.session)
+        await user_repo.set_marketing_lead(sub.user_id, value=False)
         return sub
 
     async def extend(
@@ -188,19 +209,40 @@ class SubscriptionRepo:
             sub.limit_ip = limit_ip
         sub.notified_1day = False
         sub.notified_expired = False
+        sub.grace_reminders_sent = 0
+        sub.vpn_purged_at = None
+        sub.vpn_disabled_at = None
         sub.updated_at = datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(sub)
+        user_repo = UserRepo(self.session)
+        await user_repo.set_marketing_lead(sub.user_id, value=False)
         return sub
 
     async def expire(self, sub: Subscription) -> Subscription:
         sub.status = SubscriptionStatus.EXPIRED
+        sub.grace_reminders_sent = 0
         sub.updated_at = datetime.utcnow()
         await self.session.commit()
         return sub
 
     async def mark_vpn_disabled(self, sub: Subscription) -> Subscription:
         sub.vpn_disabled_at = datetime.utcnow()
+        sub.grace_reminders_sent = 0
+        sub.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(sub)
+        return sub
+
+    async def increment_grace_reminder(self, sub: Subscription) -> Subscription:
+        sub.grace_reminders_sent = (sub.grace_reminders_sent or 0) + 1
+        sub.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(sub)
+        return sub
+
+    async def mark_vpn_purged(self, sub: Subscription) -> Subscription:
+        sub.vpn_purged_at = datetime.utcnow()
         sub.updated_at = datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(sub)
@@ -211,22 +253,35 @@ class SubscriptionRepo:
         sub.vpn_email = None
         sub.vpn_sub_id = None
         sub.vpn_key = None
+        sub.inbound_id = None
         sub.updated_at = datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(sub)
         return sub
 
-    async def get_free_trials_pending_vpn_deletion(self) -> list[Subscription]:
-        """Пробные подписки: VPN отключён ≥3 дней назад — пора удалить из 3X-UI."""
-        cutoff = datetime.utcnow() - timedelta(days=3)
+    async def get_expired_grace_restorable(self, telegram_id: int) -> Optional[Subscription]:
+        """EXPIRED подписка с ключом на сервере — можно продлить без перевыпуска."""
         result = await self.session.execute(
             select(Subscription).where(
                 and_(
-                    Subscription.plan == PlanType.FREE,
+                    Subscription.telegram_id == telegram_id,
+                    Subscription.status == SubscriptionStatus.EXPIRED,
+                    Subscription.vpn_uuid.isnot(None),
+                    Subscription.vpn_purged_at.is_(None),
+                )
+            ).order_by(Subscription.expires_at.desc()).limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_expired_pending_grace_actions(self) -> list[Subscription]:
+        """Истёкшие подписки с ключом на сервере — напоминания или удаление."""
+        result = await self.session.execute(
+            select(Subscription).where(
+                and_(
                     Subscription.status == SubscriptionStatus.EXPIRED,
                     Subscription.vpn_disabled_at.isnot(None),
-                    Subscription.vpn_disabled_at <= cutoff,
                     Subscription.vpn_uuid.isnot(None),
+                    Subscription.vpn_purged_at.is_(None),
                 )
             )
         )
@@ -297,6 +352,9 @@ class PaymentRepo:
         telegram_id: int | None = None,
         description: str | None = None,
         promo_code: str | None = None,
+        promotion_id: int | None = None,
+        original_amount: float | None = None,
+        discount_amount: float | None = None,
         provider: str = "platega",
     ) -> Payment:
         pay = Payment(
@@ -311,6 +369,9 @@ class PaymentRepo:
             payment_url=payment_url,
             description=description,
             promo_code=promo_code,
+            promotion_id=promotion_id,
+            original_amount=original_amount,
+            discount_amount=discount_amount,
             provider=provider,
             status=PaymentStatus.PENDING,
         )
@@ -463,7 +524,97 @@ class PromoRepo:
         )
         return result.scalar_one_or_none()
 
-    async def use(self, promo: PromoCode) -> PromoCode:
+    async def get_by_id(self, promo_id: int) -> Optional[PromoCode]:
+        result = await self.session.execute(
+            select(PromoCode).where(PromoCode.id == promo_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def user_has_used(self, promo_id: int, user_id: int) -> bool:
+        result = await self.session.execute(
+            select(PromoCodeUsage.id).where(
+                PromoCodeUsage.promo_code_id == promo_id,
+                PromoCodeUsage.user_id == user_id,
+            ).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def payment_has_usage(self, payment_id: int) -> bool:
+        result = await self.session.execute(
+            select(PromoCodeUsage.id).where(
+                PromoCodeUsage.payment_id == payment_id,
+            ).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def use(
+        self,
+        promo: PromoCode,
+        *,
+        user_id: int,
+        telegram_id: int,
+        payment_id: int | None = None,
+    ) -> PromoCode:
         promo.uses_count += 1
+        usage = PromoCodeUsage(
+            promo_code_id=promo.id,
+            user_id=user_id,
+            telegram_id=telegram_id,
+            payment_id=payment_id,
+        )
+        self.session.add(usage)
         await self.session.commit()
+        await self.session.refresh(promo)
         return promo
+
+
+class PromotionRepo:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def list_active(self) -> list[Promotion]:
+        result = await self.session.execute(
+            select(Promotion)
+            .where(Promotion.is_active == True)  # noqa: E712
+            .order_by(Promotion.priority.desc(), Promotion.created_at.desc())
+        )
+        promos = list(result.scalars().all())
+        return [p for p in promos if p.is_valid]
+
+    async def list_all(self) -> list[Promotion]:
+        result = await self.session.execute(
+            select(Promotion).order_by(Promotion.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_by_id(self, promotion_id: int) -> Optional[Promotion]:
+        result = await self.session.execute(
+            select(Promotion).where(Promotion.id == promotion_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def create(self, **fields) -> Promotion:
+        promotion = Promotion(**fields)
+        self.session.add(promotion)
+        await self.session.commit()
+        await self.session.refresh(promotion)
+        return promotion
+
+    async def update(self, promotion_id: int, **fields) -> Optional[Promotion]:
+        promotion = await self.get_by_id(promotion_id)
+        if not promotion:
+            return None
+        for key, val in fields.items():
+            if hasattr(promotion, key):
+                setattr(promotion, key, val)
+        await self.session.commit()
+        await self.session.refresh(promotion)
+        return promotion
+
+    async def delete(self, promotion_id: int) -> bool:
+        from sqlalchemy import delete as sql_delete
+        result = await self.session.execute(
+            sql_delete(Promotion).where(Promotion.id == promotion_id)
+        )
+        await self.session.commit()
+        return result.rowcount > 0

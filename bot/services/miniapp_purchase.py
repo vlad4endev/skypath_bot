@@ -29,6 +29,7 @@ async def process_miniapp_purchase(
     months: int,
     price: int,
     *,
+    promo_code: str | None = None,
     username: str | None = None,
     first_name: str | None = None,
     last_name: str | None = None,
@@ -71,8 +72,11 @@ async def process_miniapp_purchase(
             username=username,
             first_name=first_name,
             last_name=last_name,
+            promo_code=promo_code,
             for_miniapp=True,
         )
+    except ValueError as e:
+        return {"error": "invalid_discount", "message": str(e)}
     except Exception as e:
         logger.error("Mini App create order failed: %s", e)
         return {"error": "payment_failed", "message": "Не удалось создать платёж"}
@@ -82,6 +86,10 @@ async def process_miniapp_purchase(
         "payment_id": order.payment_id,
         "order_id": order.order_id,
         "amount": order.amount,
+        "original_amount": order.original_amount,
+        "discount_total": order.discount_total,
+        "discount_label": order.discount_label,
+        "promo_code": order.promo_code,
         "subscription_id": order.subscription_id,
         "is_new_user": is_new_user,
         "is_new_vpn_user": is_new_vpn_user,

@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { PromosPage } from './pages/PromosPage';
+import { PromotionsPage } from './pages/PromotionsPage';
 import { XuiSyncModal } from './modals/XuiSyncModal';
 import { useToast } from './components/ui';
 
@@ -50,6 +51,7 @@ function AppRoutes() {
             <Route index element={<DashboardPage />} />
             <Route path="users" element={<UsersPage onXuiSync={(id) => openXuiSync(id)} onToast={show} />} />
             <Route path="payments" element={<PaymentsPage onToast={show} />} />
+            <Route path="promotions" element={<PromotionsPage onToast={show} />} />
             <Route path="promos" element={<PromosPage onToast={show} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

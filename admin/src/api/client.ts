@@ -5,6 +5,7 @@ import type {
   PaymentRow,
   PlanStat,
   PromoRow,
+  PromotionRow,
   RevenuePoint,
   SubscriptionRow,
   SubscriptionUpdatePayload,
@@ -156,8 +157,28 @@ export const api = {
   deletePromo: (id: number) =>
     request<{ ok: boolean }>(`/admin/api/promos/${id}`, { method: 'DELETE' }),
 
+  promotions: () => request<PromotionRow[]>('/admin/api/promotions'),
+
+  createPromotion: (data: Record<string, unknown>) =>
+    request<PromotionRow>('/admin/api/promotions', { method: 'POST', body: JSON.stringify(data) }),
+
+  updatePromotion: (id: number, data: Record<string, unknown>) =>
+    request<PromotionRow>(`/admin/api/promotions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  deletePromotion: (id: number) =>
+    request<{ ok: boolean }>(`/admin/api/promotions/${id}`, { method: 'DELETE' }),
+
   xuiSync: (body: { dry_run?: boolean; delete_missing?: boolean }) =>
     request<XuiSyncResult>('/admin/api/xui/sync', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  xuiImport: (body: { dry_run?: boolean }) =>
+    request<XuiSyncResult>('/admin/api/xui/import', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

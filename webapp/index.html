@@ -440,6 +440,46 @@
     .month-label { font-size: 11px; color: var(--muted); margin-top: 3px; }
     .month-save { font-size: 10px; color: var(--success); margin-top: 3px; font-weight: 600; }
 
+    .promo-block {
+      margin-top: 16px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .promo-row {
+      display: flex; gap: 8px; margin-top: 8px;
+    }
+    .promo-row input {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      text-transform: uppercase;
+    }
+    .promo-row button {
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--accent);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .discount-info {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--success);
+      line-height: 1.5;
+    }
+    .discount-info .old-price {
+      color: var(--muted);
+      text-decoration: line-through;
+      margin-right: 6px;
+    }
+
     /* Buttons */
     .btn {
       width: 100%; padding: 16px;
@@ -620,6 +660,15 @@
       <div class="card card-glow">
         <div id="planDetailContent"></div>
         <div class="months-grid" id="monthsGrid"></div>
+        <div id="discountInfo" class="discount-info hidden"></div>
+        <div class="promo-block" id="promoBlock">
+          <div class="card-title" style="font-size:13px;margin-bottom:0">Промокод</div>
+          <div class="promo-row">
+            <input id="promoInput" type="text" placeholder="SKY10" maxlength="32" />
+            <button type="button" onclick="applyPromoCode()">Применить</button>
+          </div>
+          <div id="promoMessage" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+        </div>
         <button class="btn btn-primary" id="buyBtn" onclick="handleBuy()">💳 Оплатить</button>
       </div>
     </div>
@@ -713,6 +762,8 @@
   let supportUrl = 'https://t.me/SkyPathsupport';
   let selectedPlan = null;
   let selectedMonths = 1;
+  let selectedPromoCode = '';
+  let discountPreview = {};
   let lastSuccessLink = '';
 
   const ACTIVE_STATUSES = ['АКТИВНА', 'ПРОБНЫЙ ПЕРИОД'];
@@ -1075,6 +1126,7 @@
   function showPlanDetail(planKey) {
     selectedPlan = planKey;
     selectedMonths = 1;
+    selectedPromoCode = '';
     const plan = plansData[planKey] || dashboard?.plans?.[planKey];
     if (!plan) return;
 
@@ -1089,26 +1141,116 @@
 
     const grid = document.getElementById('monthsGrid');
     const buyBtn = document.getElementById('buyBtn');
+    const promoBlock = document.getElementById('promoBlock');
+    document.getElementById('promoInput').value = '';
+    document.getElementById('promoMessage').textContent = '';
+    document.getElementById('discountInfo').classList.add('hidden');
 
     if (!plan.prices) {
       grid.innerHTML = '';
       buyBtn.textContent = '🎁 Получить бесплатно';
+      promoBlock.classList.add('hidden');
     } else {
+      promoBlock.classList.remove('hidden');
       grid.innerHTML = Object.entries(plan.prices).map(([m, p]) => {
         const base = plan.prices[1] * m;
         const save = base - p;
         const label = monthsLabels[m] || `${m} мес.`;
         return `
           <div class="month-btn ${m == 1 ? 'selected' : ''}" id="month_${m}" onclick="selectMonth(${m}, ${p})">
-            <div class="month-price">${p} ₽</div>
+            <div class="month-price" id="monthPrice_${m}">${p} ₽</div>
             <div class="month-label">${label}</div>
             ${save > 0 ? `<div class="month-save">−${save} ₽</div>` : ''}
           </div>`;
       }).join('');
-      updateBuyBtn();
+      loadDiscountPreview();
     }
 
     tg?.HapticFeedback?.selectionChanged();
+  }
+
+  async function loadDiscountPreview() {
+    if (!selectedPlan || !telegramId) return;
+    try {
+      const r = await fetch(`${API}/discount/preview/${telegramId}?plan=${encodeURIComponent(selectedPlan)}`);
+      const data = await r.json();
+      discountPreview = data.months || {};
+      updateMonthPrices();
+      updateBuyBtn();
+    } catch (_) {
+      discountPreview = {};
+    }
+  }
+
+  function getPriceForMonth(months) {
+    const plan = plansData[selectedPlan] || dashboard?.plans?.[selectedPlan];
+    const base = plan?.prices?.[months] ?? plan?.prices?.[String(months)] ?? 0;
+    const preview = discountPreview[String(months)] || discountPreview[months];
+    if (preview?.final_price != null) return preview.final_price;
+    return base;
+  }
+
+  function getBasePriceForMonth(months) {
+    const plan = plansData[selectedPlan] || dashboard?.plans?.[selectedPlan];
+    const preview = discountPreview[String(months)] || discountPreview[months];
+    if (preview?.base_price != null) return preview.base_price;
+    return plan?.prices?.[months] ?? plan?.prices?.[String(months)] ?? 0;
+  }
+
+  function updateMonthPrices() {
+    const plan = plansData[selectedPlan] || dashboard?.plans?.[selectedPlan];
+    if (!plan?.prices) return;
+    Object.keys(plan.prices).forEach((m) => {
+      const el = document.getElementById(`monthPrice_${m}`);
+      if (!el) return;
+      const finalPrice = getPriceForMonth(+m);
+      const base = getBasePriceForMonth(+m);
+      el.innerHTML = base > finalPrice
+        ? `<span style="text-decoration:line-through;color:var(--muted);font-size:12px">${base} </span>${finalPrice} ₽`
+        : `${finalPrice} ₽`;
+    });
+  }
+
+  async function applyPromoCode() {
+    const code = (document.getElementById('promoInput')?.value || '').trim().toUpperCase();
+    const msgEl = document.getElementById('promoMessage');
+    selectedPromoCode = '';
+    if (!code) {
+      msgEl.textContent = '';
+      updateBuyBtn();
+      return;
+    }
+    const user = tg?.initDataUnsafe?.user;
+    try {
+      const r = await fetch(`${API}/promo/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegram_id: Number(telegramId),
+          plan: selectedPlan,
+          months: selectedMonths,
+          promo_code: code,
+          username: user?.username,
+          first_name: user?.first_name,
+          last_name: user?.last_name,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        msgEl.style.color = 'var(--danger)';
+        msgEl.textContent = data.error || 'Промокод недействителен';
+        updateBuyBtn();
+        return;
+      }
+      selectedPromoCode = code;
+      msgEl.style.color = 'var(--success)';
+      msgEl.textContent = data.discount_label || `Скидка −${data.discount_total} ₽`;
+      updateBuyBtn();
+      tg?.HapticFeedback?.notificationOccurred('success');
+    } catch (e) {
+      msgEl.style.color = 'var(--danger)';
+      msgEl.textContent = 'Не удалось проверить промокод';
+    }
   }
 
   function showPlansList() {
@@ -1120,20 +1262,31 @@
     selectedMonths = months;
     document.querySelectorAll('.month-btn').forEach(b => b.classList.remove('selected'));
     document.getElementById(`month_${months}`)?.classList.add('selected');
-    updateBuyBtn();
+    if (selectedPromoCode) applyPromoCode();
+    else updateBuyBtn();
     tg?.HapticFeedback?.selectionChanged();
   }
 
   function updateBuyBtn() {
     const plan = plansData[selectedPlan] || dashboard?.plans?.[selectedPlan];
     if (!plan?.prices) return;
-    document.getElementById('buyBtn').textContent = `💳 Оплатить ${plan.prices[selectedMonths]} ₽`;
+    const finalPrice = getPriceForMonth(selectedMonths);
+    const base = getBasePriceForMonth(selectedMonths);
+    const btn = document.getElementById('buyBtn');
+    const info = document.getElementById('discountInfo');
+    if (base > finalPrice) {
+      info.classList.remove('hidden');
+      info.innerHTML = `<span class="old-price">${base} ₽</span> Итого: <strong>${finalPrice} ₽</strong>`;
+    } else {
+      info.classList.add('hidden');
+    }
+    btn.textContent = `💳 Оплатить ${finalPrice} ₽`;
   }
 
   async function handleBuy() {
     const plan = plansData[selectedPlan] || dashboard?.plans?.[selectedPlan];
     if (!plan) return;
-    const price = plan.prices ? plan.prices[selectedMonths] : 0;
+    const price = plan.prices ? getPriceForMonth(selectedMonths) : 0;
     const user = tg?.initDataUnsafe?.user;
     const btn = document.getElementById('buyBtn');
 
@@ -1149,6 +1302,7 @@
           plan: selectedPlan,
           months: selectedMonths,
           price: price,
+          promo_code: selectedPromoCode || undefined,
           username: user?.username,
           first_name: user?.first_name,
           last_name: user?.last_name,

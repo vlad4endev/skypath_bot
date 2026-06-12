@@ -17,6 +17,7 @@ from bot.services.payment import (
     PlategaWebhookEvent,
     parse_platega_webhook,
 )
+from bot.services.discount_service import calculate_discount, DiscountResult
 from database.engine import async_session
 from database.models import PlanType, PaymentStatus, SubscriptionStatus
 from database.repository import UserRepo, SubscriptionRepo, PaymentRepo, PromoRepo
@@ -34,8 +35,13 @@ class CreateOrderResult:
     subscription_id: int
     payment_db_id: int
     amount: float
+    original_amount: float
+    discount_total: float
     plan: str
     months: int
+    promo_code: str | None = None
+    promotion_id: int | None = None
+    discount_label: str | None = None
 
 
 async def create_paid_order(
@@ -55,25 +61,54 @@ async def create_paid_order(
     if not plan:
         raise ValueError(f"Unknown plan: {plan_key}")
 
-    description = f"{config.BRAND_NAME} — {plan['name']} на {months} мес."
-
     async with async_session() as session:
         user_repo = UserRepo(session)
         sub_repo = SubscriptionRepo(session)
         pay_repo = PaymentRepo(session)
-        promo_repo = PromoRepo(session)
 
-        db_user, _ = await user_repo.get_or_create(
+        db_user, is_new_user = await user_repo.get_or_create(
             telegram_id=telegram_id,
             username=username,
             first_name=first_name,
             last_name=last_name,
         )
 
-        if promo_code:
-            promo = await promo_repo.get_by_code(promo_code)
-            if promo and promo.is_valid:
-                await promo_repo.use(promo)
+        discount: DiscountResult = await calculate_discount(
+            session,
+            telegram_id=telegram_id,
+            user_id=db_user.id,
+            plan_key=plan_key,
+            months=months,
+            promo_code=promo_code,
+            is_new_user=is_new_user,
+        )
+        if not discount.ok:
+            raise ValueError(discount.error or "invalid_discount")
+        if discount.final_price != price:
+            logger.warning(
+                "Price corrected user=%s plan=%s %s mo client=%s server=%s",
+                telegram_id,
+                plan_key,
+                months,
+                price,
+                discount.final_price,
+            )
+        price = discount.final_price
+        promo_code = discount.promo_code
+        promotion_id = discount.promotion_id
+
+    description = f"{config.BRAND_NAME} — {plan['name']} на {months} мес."
+    if discount.discount_label:
+        description += f" ({discount.discount_label})"
+
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        sub_repo = SubscriptionRepo(session)
+        pay_repo = PaymentRepo(session)
+
+        db_user = await user_repo.get_by_telegram_id(telegram_id)
+        if not db_user:
+            raise ValueError("User not found")
 
         active = await sub_repo.get_active(telegram_id)
         if (
@@ -87,13 +122,27 @@ async def create_paid_order(
             if pending and pending.id != active.id:
                 await sub_repo.expire(pending)
         else:
-            sub = await sub_repo.create_pending(
-                telegram_id=telegram_id,
-                user_id=db_user.id,
-                plan=PlanType[plan_key],
-                limit_ip=plan["limit_ip"],
-                promo_code=promo_code,
-            )
+            grace_sub = await sub_repo.get_expired_grace_restorable(telegram_id)
+            if grace_sub and plan_key != "FREE":
+                sub = grace_sub
+                sub.plan = PlanType[plan_key]
+                sub.limit_ip = plan["limit_ip"]
+                if promo_code:
+                    sub.promo_code = promo_code
+                if discount.discount_total and discount.base_price:
+                    sub.discount_pct = int(round(discount.discount_total / discount.base_price * 100))
+                await session.commit()
+                pending = await sub_repo.get_pending(telegram_id)
+                if pending and pending.id != grace_sub.id:
+                    await sub_repo.expire(pending)
+            else:
+                sub = await sub_repo.create_pending(
+                    telegram_id=telegram_id,
+                    user_id=db_user.id,
+                    plan=PlanType[plan_key],
+                    limit_ip=plan["limit_ip"],
+                    promo_code=promo_code,
+                )
 
         order_id = str(uuid.uuid4())
         return_url = None
@@ -129,6 +178,9 @@ async def create_paid_order(
             payment_url=payment_data["payment_url"],
             description=description,
             promo_code=promo_code,
+            promotion_id=promotion_id,
+            original_amount=float(discount.base_price),
+            discount_amount=float(discount.discount_total),
         )
 
     logger.info(
@@ -147,8 +199,13 @@ async def create_paid_order(
         subscription_id=sub.id,
         payment_db_id=payment.id,
         amount=float(price),
+        original_amount=float(discount.base_price),
+        discount_total=float(discount.discount_total),
         plan=plan_key,
         months=months,
+        promo_code=promo_code,
+        promotion_id=promotion_id,
+        discount_label=discount.discount_label,
     )
 
 
@@ -316,6 +373,18 @@ async def fulfill_paid_payment(
             else:
                 logger.info("Payment %s already processed or not found", payment_ref)
                 return False
+
+        if payment.promo_code:
+            promo_repo = PromoRepo(session)
+            if not await promo_repo.payment_has_usage(payment.id):
+                promo = await promo_repo.get_by_code(payment.promo_code)
+                if promo:
+                    await promo_repo.use(
+                        promo,
+                        user_id=payment.user_id,
+                        telegram_id=payment.telegram_id or telegram_id,
+                        payment_id=payment.id,
+                    )
 
         if provider_event and payment.amount and provider_event.amount:
             if int(provider_event.amount) != int(payment.amount):
