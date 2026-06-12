@@ -4,6 +4,7 @@ Telegram Bot + Mini App для VPN сервиса
 """
 
 import logging
+from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -96,6 +97,16 @@ def create_app(config: Config) -> web.Application:
     app.router.add_post("/api/pay", miniapp_handler.create_payment)
     app.router.add_post("/webhook/platega", payment_handler.platega_webhook)
     app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
+
+    # Mini App (при NPM вместо compose-nginx статика отдаётся ботом)
+    webapp_dir = Path(__file__).resolve().parent.parent / "webapp"
+    if webapp_dir.is_dir():
+        async def _redirect_app(_request: web.Request) -> web.Response:
+            raise web.HTTPFound("/app/")
+
+        app.router.add_get("/app", _redirect_app)
+        app.router.add_static("/app/", str(webapp_dir), show_index=True)
+        logger.info("Webapp static files: %s", webapp_dir)
 
     return app
 
