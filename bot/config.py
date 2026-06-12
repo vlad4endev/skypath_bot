@@ -62,6 +62,8 @@ class Config:
     XUI_URL_PREFIX: str = os.getenv("XUI_URL_PREFIX", "/KolbUBTWA0")
     XUI_USERNAME: str = os.getenv("XUI_USERNAME", "admin")
     XUI_PASSWORD: str = os.getenv("XUI_PASSWORD", "password")
+    XUI_API_TOKEN: str = os.getenv("XUI_API_TOKEN", "")
+    XUI_SUB_PATH: str = os.getenv("XUI_SUB_PATH", "/sub/")
     XUI_INBOUND_IDS: dict = None  # заполняется в __post_init__
 
     # Support
@@ -72,14 +74,9 @@ class Config:
     def __post_init__(self):
         self.BOT_MODE = self.BOT_MODE.strip().lower()
         self.WEBHOOK_SECRET = resolve_webhook_secret(self.BOT_TOKEN, self.WEBHOOK_SECRET)
-
-    @property
-    def use_polling(self) -> bool:
-        return self.BOT_MODE == "polling"
         self.ADMIN_IDS = [
             int(x) for x in os.getenv("ADMIN_IDS", "86517651").split(",") if x.strip()
         ]
-        # Inbound IDs для разных локаций
         self.XUI_INBOUND_IDS = {
             "🇷🇺 Россия": int(os.getenv("INBOUND_RU", "1")),
             "🇺🇸 США": int(os.getenv("INBOUND_US", "19")),
@@ -87,6 +84,14 @@ class Config:
             "🇩🇪 Германия": int(os.getenv("INBOUND_DE", "21")),
             "🇳🇱 Нидерланды": int(os.getenv("INBOUND_NL", "22")),
         }
+
+    @property
+    def use_polling(self) -> bool:
+        return self.BOT_MODE == "polling"
+
+    def xui_sub_url(self, sub_id: str) -> str:
+        path = self.XUI_SUB_PATH if self.XUI_SUB_PATH.endswith("/") else f"{self.XUI_SUB_PATH}/"
+        return f"{self.XUI_HOST}{self.XUI_URL_PREFIX}{path}{sub_id}"
 
 
 # Тарифные планы

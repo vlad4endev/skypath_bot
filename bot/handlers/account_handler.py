@@ -152,7 +152,7 @@ async def cb_my_vpn(call: CallbackQuery):
                 )
             )
         if sub.vpn_sub_id:
-            sub_url = f"{config.XUI_HOST}{config.XUI_URL_PREFIX}/panel/api/client/sub/{sub.vpn_sub_id}"
+            sub_url = config.xui_sub_url(sub.vpn_sub_id)
             builder.row(
                 InlineKeyboardButton(
                     text=f"🔗 Ссылка подписки #{i}",
@@ -233,7 +233,7 @@ async def cb_get_sub_url(call: CallbackQuery):
         await call.answer("Ссылка подписки недоступна", show_alert=True)
         return
 
-    sub_url = f"{config.XUI_HOST}{config.XUI_URL_PREFIX}/panel/api/client/sub/{sub.vpn_sub_id}"
+    sub_url = config.xui_sub_url(sub.vpn_sub_id)
 
     text = f"""
 🔗 <b>Ссылка подписки</b>

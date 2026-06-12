@@ -16,7 +16,25 @@ function baseUrl(server: Server): string {
   return `${server.baseUrl.replace(/\/$/, "")}${server.adminPath.replace(/\/$/, "")}`;
 }
 
+function authHeaders(server: Server, cookie = ""): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  const token = process.env.XUI_API_TOKEN?.trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  } else if (cookie) {
+    headers.Cookie = cookie;
+  }
+  return headers;
+}
+
 async function getSessionCookie(server: Server): Promise<string> {
+  if (process.env.XUI_API_TOKEN?.trim()) {
+    return "";
+  }
+
   const cached = sessionCache.get(server.id);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.cookie;
@@ -33,6 +51,11 @@ async function getSessionCookie(server: Server): Promise<string> {
 
   if (!resp.ok) {
     throw new Error(`3x-ui login failed: HTTP ${resp.status}`);
+  }
+
+  const data = (await resp.json()) as { success?: boolean; msg?: string };
+  if (data.success === false) {
+    throw new Error(data.msg ?? "3x-ui login failed");
   }
 
   const setCookie = resp.headers.get("set-cookie");
@@ -78,8 +101,7 @@ export function generateClientIds(firstName?: string | null, lastName?: string |
   return { uuid: uuidv4(), email, subId };
 }
 
-function buildClientSettings(
-  server: Server,
+function buildClientRecord(
   client: {
     id: string;
     email: string;
@@ -88,26 +110,41 @@ function buildClientSettings(
     expiryTime: number;
     enable: boolean;
   },
-): { id: number; settings: string } {
+): Record<string, unknown> {
   const totalBytes = client.totalGb > 0 ? client.totalGb * 1024 ** 3 : 0;
   return {
-    id: server.inboundId,
-    settings: JSON.stringify({
-      clients: [
-        {
-          id: client.id,
-          email: client.email,
-          enable: client.enable,
-          subId: client.subId,
-          totalGB: totalBytes,
-          expiryTime: client.expiryTime,
-          limitIp: 5,
-          flow: "xtls-rprx-vision",
-          reset: 0,
-        },
-      ],
-    }),
+    id: client.id,
+    email: client.email,
+    enable: client.enable,
+    subId: client.subId,
+    totalGB: totalBytes,
+    expiryTime: client.expiryTime,
+    limitIp: 5,
+    flow: "xtls-rprx-vision",
+    reset: 0,
   };
+}
+
+async function addClientLegacy(
+  server: Server,
+  client: Record<string, unknown>,
+  cookie: string,
+): Promise<void> {
+  const payload = {
+    id: server.inboundId,
+    settings: JSON.stringify({ clients: [client] }),
+  };
+
+  const resp = await fetch(`${baseUrl(server)}/panel/api/inbounds/addClient`, {
+    method: "POST",
+    headers: authHeaders(server, cookie),
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await resp.json()) as { success?: boolean; msg?: string };
+  if (!resp.ok || !data.success) {
+    throw new Error(data.msg ?? `legacy addClient HTTP ${resp.status}`);
+  }
 }
 
 export async function createClient(
@@ -120,7 +157,7 @@ export async function createClient(
 ): Promise<void> {
   await withRetry("addClient", async () => {
     const cookie = await getSessionCookie(server);
-    const payload = buildClientSettings(server, {
+    const client = buildClientRecord({
       id: uuid,
       email,
       subId,
@@ -129,19 +166,20 @@ export async function createClient(
       enable: true,
     });
 
-    const resp = await fetch(`${baseUrl(server)}/panel/api/inbounds/addClient`, {
+    const resp = await fetch(`${baseUrl(server)}/panel/api/clients/add`, {
       method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        Cookie: cookie,
-      },
-      body: JSON.stringify(payload),
+      headers: authHeaders(server, cookie),
+      body: JSON.stringify({ client, inboundIds: [server.inboundId] }),
     });
 
     const data = (await resp.json()) as { success?: boolean; msg?: string };
     if (!resp.ok || !data.success) {
-      throw new Error(data.msg ?? `addClient HTTP ${resp.status}`);
+      try {
+        await addClientLegacy(server, client, cookie);
+        return;
+      } catch {
+        throw new Error(data.msg ?? `clients/add HTTP ${resp.status}`);
+      }
     }
   });
 }
@@ -157,35 +195,92 @@ export async function updateClient(
 ): Promise<void> {
   await withRetry("updateClient", async () => {
     const cookie = await getSessionCookie(server);
-    const payload = buildClientSettings(server, {
-      id: uuid,
-      email,
-      subId,
-      totalGb,
-      expiryTime,
-      enable,
-    });
+    const client = {
+      ...buildClientRecord({
+        id: uuid,
+        email,
+        subId,
+        totalGb,
+        expiryTime,
+        enable,
+      }),
+      inboundIds: [server.inboundId],
+    };
 
-    const resp = await fetch(
-      `${baseUrl(server)}/panel/api/inbounds/updateClient/${uuid}`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          Cookie: cookie,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
+    const resp = await fetch(`${baseUrl(server)}/panel/api/clients/update/${encodeURIComponent(email)}`, {
+      method: "POST",
+      headers: authHeaders(server, cookie),
+      body: JSON.stringify(client),
+    });
 
     const data = (await resp.json()) as { success?: boolean; msg?: string };
     if (!resp.ok || !data.success) {
-      throw new Error(data.msg ?? `updateClient HTTP ${resp.status}`);
+      const legacyPayload = {
+        id: server.inboundId,
+        settings: JSON.stringify({ clients: [client] }),
+      };
+      const legacyResp = await fetch(
+        `${baseUrl(server)}/panel/api/inbounds/updateClient/${uuid}`,
+        {
+          method: "POST",
+          headers: authHeaders(server, cookie),
+          body: JSON.stringify(legacyPayload),
+        },
+      );
+      const legacyData = (await legacyResp.json()) as { success?: boolean; msg?: string };
+      if (!legacyResp.ok || !legacyData.success) {
+        throw new Error(legacyData.msg ?? data.msg ?? `updateClient HTTP ${resp.status}`);
+      }
     }
   });
 }
 
 export async function disableClient(server: Server, uuid: string, email: string, subId: string): Promise<void> {
   await updateClient(server, uuid, email, subId, 0, 0, false);
+}
+
+export async function getServerStatus(server: Server): Promise<unknown> {
+  return withRetry("server/status", async () => {
+    const cookie = await getSessionCookie(server);
+    const resp = await fetch(`${baseUrl(server)}/panel/api/server/status`, {
+      headers: authHeaders(server, cookie),
+    });
+    if (!resp.ok) {
+      throw new Error(`server/status HTTP ${resp.status}`);
+    }
+    const data = (await resp.json()) as { success?: boolean; msg?: string; obj?: unknown };
+    if (data.success === false) {
+      throw new Error(data.msg ?? "server/status failed");
+    }
+    return data.obj ?? data;
+  });
+}
+
+export async function getClient(server: Server, email: string): Promise<unknown> {
+  return withRetry("clients/get", async () => {
+    const cookie = await getSessionCookie(server);
+    const resp = await fetch(
+      `${baseUrl(server)}/panel/api/clients/get/${encodeURIComponent(email)}`,
+      { headers: authHeaders(server, cookie) },
+    );
+    const data = (await resp.json()) as { success?: boolean; msg?: string; obj?: unknown };
+    if (!resp.ok || !data.success) {
+      throw new Error(data.msg ?? `clients/get HTTP ${resp.status}`);
+    }
+    return data.obj ?? data;
+  });
+}
+
+export async function listInbounds(server: Server): Promise<unknown[]> {
+  return withRetry("inbounds/list", async () => {
+    const cookie = await getSessionCookie(server);
+    const resp = await fetch(`${baseUrl(server)}/panel/api/inbounds/list`, {
+      headers: authHeaders(server, cookie),
+    });
+    const data = (await resp.json()) as { success?: boolean; msg?: string; obj?: unknown[] };
+    if (!resp.ok || !data.success) {
+      throw new Error(data.msg ?? `inbounds/list HTTP ${resp.status}`);
+    }
+    return Array.isArray(data.obj) ? data.obj : [];
+  });
 }
