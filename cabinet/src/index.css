@@ -185,15 +185,206 @@ body::before {
 .login-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 32px;
-  max-width: 960px;
+  gap: 28px;
+  max-width: 1080px;
   width: 100%;
+  position: relative;
+  z-index: 1;
 }
 
 @media (min-width: 900px) {
   .login-grid {
-    grid-template-columns: 1fr 400px;
-    align-items: center;
+    grid-template-columns: minmax(0, 1.15fr) 400px;
+    align-items: stretch;
+    gap: 40px;
+  }
+}
+
+/* Promo panel beside login */
+.login-promo {
+  position: relative;
+  padding: 8px 0 16px;
+}
+
+.login-promo__glow {
+  position: absolute;
+  top: -40px;
+  left: -20px;
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, rgba(138, 156, 254, 0.22) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.login-promo__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(110, 207, 138, 0.15), rgba(138, 156, 254, 0.12));
+  border: 1px solid rgba(110, 207, 138, 0.35);
+  color: var(--success);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.login-promo__title {
+  font-size: clamp(1.85rem, 4.5vw, 2.65rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  margin: 18px 0 14px;
+  background: linear-gradient(135deg, #fff 30%, #c4ceff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.login-promo__lead {
+  color: var(--muted);
+  max-width: 480px;
+  line-height: 1.65;
+  font-size: 1rem;
+  margin: 0 0 22px;
+}
+
+.login-promo__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.login-promo__stat {
+  flex: 1;
+  min-width: 88px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(138, 156, 254, 0.08);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+
+.login-promo__stat strong {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1.2;
+}
+
+.login-promo__stat span {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.login-promo__cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+@media (min-width: 520px) {
+  .login-promo__cards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.login-promo__card {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.login-promo__card:hover {
+  border-color: rgba(138, 156, 254, 0.35);
+  transform: translateY(-1px);
+}
+
+.login-promo__card-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, rgba(138, 156, 254, 0.2), rgba(91, 111, 214, 0.15));
+  color: var(--accent);
+}
+
+.login-promo__card h3 {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.login-promo__card p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.login-promo__footnote {
+  font-size: 0.88rem;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+  padding-top: 4px;
+}
+
+.login-promo__footnote a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-promo__footnote a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 899px) {
+  .login-promo__cards {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .login-promo__card p {
+    display: none;
+  }
+
+  .login-promo__card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-promo__stats {
+    display: none;
+  }
+
+  .login-promo__cards {
+    grid-template-columns: 1fr;
+  }
+
+  .login-promo__card p {
+    display: block;
   }
 }
 
@@ -240,6 +431,14 @@ body::before {
   padding: 32px;
   backdrop-filter: blur(12px);
   box-shadow: 0 24px 64px rgba(0,0,0,0.35);
+  align-self: center;
+}
+
+@media (min-width: 900px) {
+  .login-card {
+    position: sticky;
+    top: 24px;
+  }
 }
 
 .login-card h2 {

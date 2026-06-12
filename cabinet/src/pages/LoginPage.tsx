@@ -3,7 +3,8 @@ import { Navigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight } from 'lucide-react';
 import { ApiError, api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { Logo, Spinner } from '../components/ui';
+import { LoginPromo } from '../components/LoginPromo';
+import { Spinner } from '../components/ui';
 
 export function LoginPage() {
   const { authenticated, loading, login } = useAuth();
@@ -50,23 +51,11 @@ export function LoginPage() {
     <div className="login-page">
       <div className="login-bg" aria-hidden />
       <div className="login-grid">
-        <section className="login-hero">
-          <Logo brand={brand} size={56} />
-          <h1>Личный кабинет</h1>
-          <p>
-            Управляйте подпиской, ключами и тарифами из браузера.
-            Войдите с email и паролем, которые вы задали в Telegram Mini App.
-          </p>
-          <ul className="login-features">
-            <li>Статус подписки и трафик в реальном времени</li>
-            <li>VPN-ключи и быстрое подключение</li>
-            <li>Оплата и продление тарифов</li>
-          </ul>
-        </section>
+        <LoginPromo brand={brand} botUsername={botUsername} />
 
         <div className="login-card">
-          <h2>Вход</h2>
-          <p className="login-hint">Используйте данные из регистрации в боте</p>
+          <h2>Вход в кабинет</h2>
+          <p className="login-hint">Email и пароль из регистрации в Telegram</p>
 
           <form onSubmit={onSubmit} className="login-form">
             <label className="field">
@@ -123,7 +112,7 @@ export function LoginPage() {
               ) : (
                 'Telegram-боте'
               )}{' '}
-              и пройдите регистрацию email + пароль.
+              и задайте email + пароль при первом входе.
             </p>
             {supportUrl && (
               <a href={supportUrl} target="_blank" rel="noreferrer" className="support-link">
