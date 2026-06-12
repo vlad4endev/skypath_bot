@@ -1,6 +1,7 @@
 # Admin React build
 FROM node:20-slim AS admin-build
 WORKDIR /build
+ENV NODE_OPTIONS=--max-old-space-size=512
 COPY admin/package.json admin/package-lock.json ./
 RUN npm ci
 COPY admin/index.html admin/vite.config.ts admin/tsconfig.json admin/tsconfig.node.json ./
