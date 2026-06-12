@@ -6,7 +6,6 @@ Create Date: 2026-06-12
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy import inspect
 
 revision = "005"
 down_revision = "004"
@@ -14,24 +13,46 @@ branch_labels = None
 depends_on = None
 
 
-def _insp():
-    return inspect(op.get_bind())
+def _scalar(sql: str, **params: object) -> bool:
+    """Sync SQL check — safe with asyncpg inside Alembic run_sync (no inspect())."""
+    result = op.get_bind().execute(sa.text(sql), params)
+    return bool(result.scalar())
 
 
 def _table_exists(name: str) -> bool:
-    return name in _insp().get_table_names()
+    return _scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_name = :name)",
+        name=name,
+    )
 
 
 def _column_exists(table: str, column: str) -> bool:
-    return column in {c["name"] for c in _insp().get_columns(table)}
+    return _scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'public' AND table_name = :table AND column_name = :column)",
+        table=table,
+        column=column,
+    )
 
 
 def _index_exists(table: str, index: str) -> bool:
-    return index in {i["name"] for i in _insp().get_indexes(table)}
+    return _scalar(
+        "SELECT EXISTS (SELECT 1 FROM pg_indexes "
+        "WHERE schemaname = 'public' AND tablename = :table AND indexname = :index)",
+        table=table,
+        index=index,
+    )
 
 
 def _fk_exists(table: str, fk_name: str) -> bool:
-    return fk_name in {fk["name"] for fk in _insp().get_foreign_keys(table)}
+    return _scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.table_constraints "
+        "WHERE table_schema = 'public' AND table_name = :table "
+        "AND constraint_name = :fk_name AND constraint_type = 'FOREIGN KEY')",
+        table=table,
+        fk_name=fk_name,
+    )
 
 
 def upgrade() -> None:
