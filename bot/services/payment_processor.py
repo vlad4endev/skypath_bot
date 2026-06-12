@@ -18,7 +18,7 @@ from bot.services.payment import (
     parse_platega_webhook,
 )
 from database.engine import async_session
-from database.models import PlanType, PaymentStatus
+from database.models import PlanType, PaymentStatus, SubscriptionStatus
 from database.repository import UserRepo, SubscriptionRepo, PaymentRepo, PromoRepo
 
 logger = logging.getLogger(__name__)
@@ -75,13 +75,25 @@ async def create_paid_order(
             if promo and promo.is_valid:
                 await promo_repo.use(promo)
 
-        sub = await sub_repo.create_pending(
-            telegram_id=telegram_id,
-            user_id=db_user.id,
-            plan=PlanType[plan_key],
-            limit_ip=plan["limit_ip"],
-            promo_code=promo_code,
-        )
+        active = await sub_repo.get_active(telegram_id)
+        if (
+            active
+            and active.plan != PlanType.FREE
+            and active.vpn_sub_id
+            and active.status == SubscriptionStatus.ACTIVE
+        ):
+            sub = active
+            pending = await sub_repo.get_pending(telegram_id)
+            if pending and pending.id != active.id:
+                await sub_repo.expire(pending)
+        else:
+            sub = await sub_repo.create_pending(
+                telegram_id=telegram_id,
+                user_id=db_user.id,
+                plan=PlanType[plan_key],
+                limit_ip=plan["limit_ip"],
+                promo_code=promo_code,
+            )
 
         order_id = str(uuid.uuid4())
         return_url = None

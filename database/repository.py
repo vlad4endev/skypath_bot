@@ -170,11 +170,22 @@ class SubscriptionRepo:
         await self.session.refresh(sub)
         return sub
 
-    async def extend(self, sub: Subscription, months: int) -> Subscription:
+    async def extend(
+        self,
+        sub: Subscription,
+        months: int,
+        *,
+        plan: PlanType | None = None,
+        limit_ip: int | None = None,
+    ) -> Subscription:
         base = max(sub.expires_at, datetime.utcnow()) if sub.expires_at else datetime.utcnow()
         sub.expires_at = base + timedelta(days=30 * months)
-        sub.months_paid += months
+        sub.months_paid = (sub.months_paid or 0) + months
         sub.status = SubscriptionStatus.ACTIVE
+        if plan is not None:
+            sub.plan = plan
+        if limit_ip is not None:
+            sub.limit_ip = limit_ip
         sub.notified_1day = False
         sub.notified_expired = False
         sub.updated_at = datetime.utcnow()

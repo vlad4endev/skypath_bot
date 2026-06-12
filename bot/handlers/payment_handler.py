@@ -18,6 +18,7 @@ from bot.services.payment_processor import create_paid_order, process_manual_che
 from bot.services.payment import verify_webhook_headers
 from bot.services.xui_client import XUIClient
 from bot.services.vpn_provision import provision_vpn_for_subscription
+from bot.services.subscription_url import resolve_subscription_url
 from bot.handlers.referral_handler import process_referral_bonus
 
 router = Router()
@@ -249,15 +250,44 @@ async def _process_successful_payment(
             amount = payment.amount
 
         user = await user_repo.get_by_telegram_id(telegram_id)
-        sub = await sub_repo.get_by_id(subscription_id) if subscription_id else None
+        active_sub = await sub_repo.get_active(telegram_id)
+
         if (
-            sub
-            and sub.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL)
-            and sub.vpn_key
-            and sub.plan != PlanType.FREE
+            active_sub
+            and active_sub.plan != PlanType.FREE
+            and active_sub.vpn_sub_id
+            and active_sub.status == SubscriptionStatus.ACTIVE
         ):
-            await pay_repo.mark_fulfilled(payment)
-            logger.info("Subscription %s already active with key", subscription_id)
+            if subscription_id and subscription_id != active_sub.id:
+                orphan = await sub_repo.get_by_id(subscription_id)
+                if orphan and orphan.status == SubscriptionStatus.PENDING:
+                    await sub_repo.expire(orphan)
+
+            await _extend_paid_subscription(
+                bot=bot,
+                telegram_id=telegram_id,
+                sub=active_sub,
+                plan=plan or "BASIC",
+                months=months or 1,
+                amount=amount or 0,
+                order_id=payment.order_id if payment else payment_id,
+                payment_db_id=payment.id if payment else payment_db_id,
+            )
+            if user and user.referrer_id:
+                await process_referral_bonus(bot, user, payment_id=payment_id)
+            try:
+                user_name = user.full_name if user else f"User {telegram_id}"
+                paid_str = f"{payment.paid_amount or amount:.0f}" if payment else f"{amount:.0f}"
+                admin_text = (
+                    f"💰 <b>Продление подписки!</b>\n\n"
+                    f"👤 {user_name} (<code>{telegram_id}</code>)\n"
+                    f"🧾 Заказ: <code>{payment.order_id if payment else payment_id}</code>\n"
+                    f"📦 Тариф: {plan} / +{months} мес.\n"
+                    f"💵 Сумма: {paid_str} руб."
+                )
+                await bot.send_message(config.ADMIN_NOTIFY_ID, admin_text)
+            except Exception as e:
+                logger.warning("Admin notify failed: %s", e)
             return
 
     plan_config = PLANS.get(plan, PLANS["BASIC"])
@@ -293,6 +323,107 @@ async def _process_successful_payment(
         await bot.send_message(config.ADMIN_NOTIFY_ID, admin_text)
     except Exception as e:
         logger.warning("Admin notify failed: %s", e)
+
+
+async def _extend_paid_subscription(
+    bot: Bot,
+    *,
+    telegram_id: int,
+    sub,
+    plan: str,
+    months: int,
+    amount: float,
+    order_id: str | None,
+    payment_db_id: int | None,
+) -> None:
+    """Продлить активную платную подписку после успешной оплаты."""
+    plan_config = PLANS.get(plan, PLANS["BASIC"])
+    plan_type = PlanType[plan] if plan in PlanType.__members__ else sub.plan
+
+    async with async_session() as session:
+        sub_repo = SubscriptionRepo(session)
+        pay_repo = PaymentRepo(session)
+        db_sub = await sub_repo.get_by_id(sub.id)
+        if not db_sub:
+            logger.error("Subscription %s not found for renewal", sub.id)
+            return
+        if payment_db_id:
+            payment = await pay_repo.get_by_id(payment_db_id)
+            if payment and payment.fulfilled_at:
+                logger.info("Payment %s already fulfilled (renewal skipped)", payment_db_id)
+                return
+
+        await sub_repo.extend(
+            db_sub,
+            months,
+            plan=plan_type,
+            limit_ip=plan_config.get("limit_ip", db_sub.limit_ip),
+        )
+        db_sub = await sub_repo.get_by_id(sub.id)
+
+    if not db_sub.expires_at or not db_sub.inbound_id:
+        logger.error("Cannot renew subscription %s: missing expiry or inbound", sub.id)
+        return
+
+    await xui.update_client(
+        inbound_id=db_sub.inbound_id,
+        client_uuid=db_sub.vpn_uuid,
+        email=db_sub.vpn_email,
+        sub_id=db_sub.vpn_sub_id,
+        telegram_id=telegram_id,
+        limit_ip=db_sub.limit_ip,
+        expiry_unix=int(db_sub.expires_at.timestamp()),
+        enable=True,
+    )
+
+    sub_url = resolve_subscription_url(db_sub, config) or db_sub.vpn_key or ""
+    period_text = MONTHS_LABELS.get(months, f"{months} мес.")
+    expires_str = db_sub.expires_at.strftime("%d.%m.%Y")
+
+    text = f"""
+✅ <b>Подписка продлена!</b>
+
+📦 Тариф: <b>{plan_config['name']}</b>
+⏱ Добавлено: <b>{period_text}</b>
+📱 Устройств: <b>{db_sub.limit_ip}</b>
+
+━━━━━━━━━━━━━━━━━
+🧾 <b>Чек оплаты</b>
+Заказ: <code>{order_id or '—'}</code>
+Сумма: <b>{amount:.0f} ₽</b>
+Действует до: <b>{expires_str}</b>
+━━━━━━━━━━━━━━━━━
+
+🔗 <b>Ссылка для подключения:</b>
+<code>{sub_url}</code>
+
+<i>Ключ тот же — обнови подписку в Happ или v2RayTun.</i>
+"""
+
+    from bot.keyboards.webapp import cabinet_button, is_miniapp_available
+
+    builder = InlineKeyboardBuilder()
+    if is_miniapp_available():
+        builder.row(cabinet_button("👤 Личный кабинет"))
+    builder.row(
+        InlineKeyboardButton(text="📖 Инструкции", callback_data="instructions"),
+        InlineKeyboardButton(text="👤 Аккаунт", callback_data="account"),
+    )
+
+    await bot.send_message(telegram_id, text, reply_markup=builder.as_markup())
+    logger.info(
+        "Subscription renewed for %s: +%s mo until %s",
+        telegram_id,
+        months,
+        expires_str,
+    )
+
+    if payment_db_id:
+        async with async_session() as session:
+            pay_repo = PaymentRepo(session)
+            payment = await pay_repo.get_by_id(payment_db_id)
+            if payment:
+                await pay_repo.mark_fulfilled(payment)
 
 
 async def _create_vpn_and_notify(
