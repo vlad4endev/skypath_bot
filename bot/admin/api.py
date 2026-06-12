@@ -1027,58 +1027,66 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         return _json({"target": target, "count": count})
 
     async def broadcasts_list(request: web.Request) -> web.Response:
-        status = request.query.get("status") or None
-        async with async_session() as session:
-            repo = AdminRepo(session)
-            items = await repo.list_broadcasts(status=status)
-        return _json([_broadcast_json(b) for b in items])
+        try:
+            status = request.query.get("status") or None
+            async with async_session() as session:
+                repo = AdminRepo(session)
+                items = await repo.list_broadcasts(status=status)
+            return _json([_broadcast_json(b) for b in items])
+        except Exception:
+            logger.exception("broadcasts_list failed")
+            return _error("Broadcasts unavailable — run database migrations", 500)
 
     async def broadcasts_create(request: web.Request) -> web.Response:
-        body = await _body(request)
-        text = (body.get("text") or "").strip()
-        if not text:
-            return _error("text required")
-        target = (body.get("target") or "all").strip()
-        if not is_valid_target(target):
-            return _error("Invalid target")
-        send_mode = (body.get("send_mode") or "now").strip()
-        name = (body.get("name") or "").strip() or None
+        try:
+            body = await _body(request)
+            text = (body.get("text") or "").strip()
+            if not text:
+                return _error("text required")
+            target = (body.get("target") or "all").strip()
+            if not is_valid_target(target):
+                return _error("Invalid target")
+            send_mode = (body.get("send_mode") or "now").strip()
+            name = (body.get("name") or "").strip() or None
 
-        immediate = send_mode != "scheduled"
-        send_at: datetime
-        if immediate:
-            send_at = datetime.utcnow()
-            status = BroadcastStatus.SENDING
-        else:
-            parsed = _parse_dt_msk(body.get("send_at"))
-            if not parsed:
-                return _error("send_at required for scheduled broadcast")
-            if parsed <= datetime.utcnow():
-                return _error("send_at must be in the future (MSK)")
-            send_at = parsed
-            status = BroadcastStatus.SCHEDULED
+            immediate = send_mode != "scheduled"
+            send_at: datetime
+            if immediate:
+                send_at = datetime.utcnow()
+                status = BroadcastStatus.SENDING
+            else:
+                parsed = _parse_dt_msk(body.get("send_at"))
+                if not parsed:
+                    return _error("send_at required for scheduled broadcast")
+                if parsed <= datetime.utcnow():
+                    return _error("send_at must be in the future (MSK)")
+                send_at = parsed
+                status = BroadcastStatus.SCHEDULED
 
-        async with async_session() as session:
-            target_count = await count_recipients(session, target)
-            repo = AdminRepo(session)
-            broadcast = await repo.create_broadcast(
-                name=name,
-                text=text,
-                target=target,
-                status=status,
-                send_at=send_at,
-                target_count=target_count,
-                started_at=datetime.utcnow() if immediate else None,
-            )
+            async with async_session() as session:
+                target_count = await count_recipients(session, target)
+                repo = AdminRepo(session)
+                broadcast = await repo.create_broadcast(
+                    name=name,
+                    text=text,
+                    target=target,
+                    status=status,
+                    send_at=send_at,
+                    target_count=target_count,
+                    started_at=datetime.utcnow() if immediate else None,
+                )
 
-        if immediate:
-            bot = request.app["bot"]
-            asyncio.create_task(
-                execute_broadcast(broadcast.id, bot),
-                name=f"broadcast-{broadcast.id}",
-            )
+            if immediate:
+                bot = request.app["bot"]
+                asyncio.create_task(
+                    execute_broadcast(broadcast.id, bot),
+                    name=f"broadcast-{broadcast.id}",
+                )
 
-        return _json(_broadcast_json(broadcast), 201)
+            return _json(_broadcast_json(broadcast), 201)
+        except Exception:
+            logger.exception("broadcasts_create failed")
+            return _error("Failed to create broadcast — check DB migrations", 500)
 
     async def broadcasts_send_now(request: web.Request) -> web.Response:
         broadcast_id = int(request.match_info["broadcast_id"])

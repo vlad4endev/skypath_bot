@@ -5,7 +5,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import (
     BigInteger, String, DateTime, Enum, Boolean,
-    Integer, Float, Text, ForeignKey, Index, JSON
+    Integer, Float, Text, ForeignKey, Index, JSON,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -271,7 +271,14 @@ class Broadcast(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     target: Mapped[str] = mapped_column(String(32), default="all", index=True)
     status: Mapped[BroadcastStatus] = mapped_column(
-        Enum(BroadcastStatus), default=BroadcastStatus.SCHEDULED, index=True
+        Enum(
+            BroadcastStatus,
+            name="broadcaststatus",
+            values_callable=lambda obj: [e.value for e in obj],
+            create_constraint=False,
+        ),
+        default=BroadcastStatus.SCHEDULED,
+        index=True,
     )
     send_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     sent: Mapped[bool] = mapped_column(Boolean, default=False)
