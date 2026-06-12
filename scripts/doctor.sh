@@ -29,8 +29,9 @@ echo "--- контейнеры проекта ---"
 docker compose ps 2>&1 || true
 echo ""
 
-echo "--- порт 8080 / 8082 ---"
-ss -tlnp 2>/dev/null | grep -E ':8080|:8082' || netstat -tlnp 2>/dev/null | grep -E ':8080|:8082' || echo "не удалось проверить"
+echo "--- порт бота (BOT_HOST_PORT, по умолчанию 8084) ---"
+BOT_HP="${BOT_HOST_PORT:-8084}"
+ss -tlnp 2>/dev/null | grep -E ":8080|:${BOT_HP}" || netstat -tlnp 2>/dev/null | grep -E ":8080|:${BOT_HP}" || echo "не удалось проверить"
 echo ""
 
 echo "--- docker network ---"
@@ -39,7 +40,7 @@ echo ""
 
 echo "--- health ---"
 echo -n "8080: "; curl -s --max-time 2 http://127.0.0.1:8080/health 2>/dev/null || echo "нет ответа"
-echo -n "8082: "; curl -s --max-time 2 http://127.0.0.1:8082/health 2>/dev/null || echo "нет ответа"
+echo -n "${BOT_HP}: "; curl -s --max-time 2 "http://127.0.0.1:${BOT_HP}/health" 2>/dev/null || echo "нет ответа"
 echo ""
 
 if docker compose config --services 2>/dev/null | grep -qx postgres; then

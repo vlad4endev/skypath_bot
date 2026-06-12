@@ -172,7 +172,7 @@ uses_external_proxy() {
 if uses_external_proxy; then
     echo -e "${YELLOW}Обнаружен Nginx Proxy Manager — встроенный nginx не запускаем${NC}"
     echo -e "В NPM добавь прокси на ${GREEN}skypath_bot:8080${NC} (внутри Docker-сети, не host:8080)"
-    echo -e "Проверка health: ${GREEN}curl -s http://127.0.0.1:8082/health${NC}"
+    echo -e "Проверка health: ${GREEN}curl -s http://127.0.0.1:${BOT_HOST_PORT:-8084}/health${NC}"
 elif has_ssl_cert; then
     echo -e "${YELLOW}SSL найден — nginx с HTTPS${NC}"
     docker compose up -d nginx certbot
@@ -193,6 +193,6 @@ echo "Telegram webhook: ${BASE}/webhook/<BOT_TOKEN>"
 echo "Platega webhook:   ${BASE}/webhook/platega"
 echo "Mini App:          ${MINI_APP_URL:-${BASE}/app}"
 echo "Health:            ${BASE}/health"
-echo "Health (local):    curl -s http://127.0.0.1:8082/health"
+echo "Health (local):    curl -s http://127.0.0.1:${BOT_HOST_PORT:-8084}/health"
 echo ""
 echo -e "Логи: ${YELLOW}./scripts/logs.sh bot${NC}"
