@@ -35,10 +35,7 @@ def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
         if has_subscription:
             builder.row(cabinet_button("👤 Личный кабинет"))
         else:
-            builder.row(
-                cabinet_button("👤 Личный кабинет"),
-                buy_vpn_button(),
-            )
+            builder.row(buy_vpn_button())
     else:
         if has_subscription:
             builder.row(
@@ -46,7 +43,6 @@ def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
             )
         else:
             builder.row(
-                InlineKeyboardButton(text="👤 Личный кабинет", callback_data="account"),
                 InlineKeyboardButton(text="💳 Купить VPN", callback_data="plans"),
             )
 
