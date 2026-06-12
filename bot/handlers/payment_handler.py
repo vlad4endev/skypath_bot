@@ -36,6 +36,34 @@ xui = XUIClient(
 )
 
 
+async def _notify_admin_payment(bot: Bot, *, payer_telegram_id: int, text: str) -> None:
+    """Служебное уведомление админу — не дублировать в чат плательщика."""
+    if payer_telegram_id == config.ADMIN_NOTIFY_ID:
+        return
+    try:
+        await bot.send_message(config.ADMIN_NOTIFY_ID, text)
+    except Exception as e:
+        logger.warning("Admin notify failed: %s", e)
+
+
+def _admin_payment_text(
+    kind: str,
+    *,
+    user_name: str,
+    telegram_id: int,
+    plan: str,
+    months: int,
+    amount: float,
+    extended: bool = False,
+) -> str:
+    labels = {"new": "Оплата", "renew": "Продление", "grace": "Grace"}
+    period = f"+{months}м" if extended else f"{months}м"
+    return (
+        f"💰 {labels.get(kind, 'Оплата')} · {amount:.0f}₽ · {plan} {period} · "
+        f"{user_name} <code>{telegram_id}</code>"
+    )
+
+
 @router.callback_query(F.data.startswith("confirm_plan:"))
 async def cb_confirm_plan(call: CallbackQuery):
     """Подтверждение тарифа из inline-меню бота."""
@@ -276,19 +304,20 @@ async def _process_successful_payment(
             )
             if user and user.referrer_id:
                 await process_referral_bonus(bot, user, payment_id=payment_id)
-            try:
-                user_name = user.full_name if user else f"User {telegram_id}"
-                paid_str = f"{payment.paid_amount or amount:.0f}" if payment else f"{amount:.0f}"
-                admin_text = (
-                    f"💰 <b>Продление подписки!</b>\n\n"
-                    f"👤 {user_name} (<code>{telegram_id}</code>)\n"
-                    f"🧾 Заказ: <code>{payment.order_id if payment else payment_id}</code>\n"
-                    f"📦 Тариф: {plan} / +{months} мес.\n"
-                    f"💵 Сумма: {paid_str} руб."
-                )
-                await bot.send_message(config.ADMIN_NOTIFY_ID, admin_text)
-            except Exception as e:
-                logger.warning("Admin notify failed: %s", e)
+            user_name = user.full_name if user else f"User {telegram_id}"
+            await _notify_admin_payment(
+                bot,
+                payer_telegram_id=telegram_id,
+                text=_admin_payment_text(
+                    "renew",
+                    user_name=user_name,
+                    telegram_id=telegram_id,
+                    plan=plan or "BASIC",
+                    months=months or 1,
+                    amount=payment.paid_amount or amount if payment else amount,
+                    extended=True,
+                ),
+            )
             return
 
         if grace_sub and grace_sub.vpn_uuid and plan != "FREE":
@@ -309,19 +338,20 @@ async def _process_successful_payment(
             )
             if user and user.referrer_id:
                 await process_referral_bonus(bot, user, payment_id=payment_id)
-            try:
-                user_name = user.full_name if user else f"User {telegram_id}"
-                paid_str = f"{payment.paid_amount or amount:.0f}" if payment else f"{amount:.0f}"
-                admin_text = (
-                    f"💰 <b>Возвращение после grace!</b>\n\n"
-                    f"👤 {user_name} (<code>{telegram_id}</code>)\n"
-                    f"🧾 Заказ: <code>{payment.order_id if payment else payment_id}</code>\n"
-                    f"📦 Тариф: {plan} / +{months} мес.\n"
-                    f"💵 Сумма: {paid_str} руб."
-                )
-                await bot.send_message(config.ADMIN_NOTIFY_ID, admin_text)
-            except Exception as e:
-                logger.warning("Admin notify failed: %s", e)
+            user_name = user.full_name if user else f"User {telegram_id}"
+            await _notify_admin_payment(
+                bot,
+                payer_telegram_id=telegram_id,
+                text=_admin_payment_text(
+                    "grace",
+                    user_name=user_name,
+                    telegram_id=telegram_id,
+                    plan=plan or "BASIC",
+                    months=months or 1,
+                    amount=payment.paid_amount or amount if payment else amount,
+                    extended=True,
+                ),
+            )
             return
 
     plan_config = PLANS.get(plan, PLANS["BASIC"])
@@ -342,21 +372,19 @@ async def _process_successful_payment(
     if user and user.referrer_id:
         await process_referral_bonus(bot, user, payment_id=payment_id)
 
-    try:
-        user_name = user.full_name if user else f"User {telegram_id}"
-        paid_str = f"{payment.paid_amount or amount:.0f}" if payment else f"{amount:.0f}"
-        admin_text = (
-            f"💰 <b>Новая оплата!</b>\n\n"
-            f"👤 {user_name} (<code>{telegram_id}</code>)\n"
-            f"🧾 Заказ: <code>{payment.order_id if payment else payment_id}</code>\n"
-            f"📦 Тариф: {plan} / {months} мес.\n"
-            f"💵 Сумма: {paid_str} руб."
-        )
-        if payment and payment.provider_status:
-            admin_text += f"\n📡 Platega: {payment.provider_status}"
-        await bot.send_message(config.ADMIN_NOTIFY_ID, admin_text)
-    except Exception as e:
-        logger.warning("Admin notify failed: %s", e)
+    user_name = user.full_name if user else f"User {telegram_id}"
+    await _notify_admin_payment(
+        bot,
+        payer_telegram_id=telegram_id,
+        text=_admin_payment_text(
+            "new",
+            user_name=user_name,
+            telegram_id=telegram_id,
+            plan=plan or "BASIC",
+            months=months or 1,
+            amount=payment.paid_amount or amount if payment else amount,
+        ),
+    )
 
 
 async def _extend_paid_subscription(
