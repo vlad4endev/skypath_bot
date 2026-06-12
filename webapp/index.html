@@ -840,11 +840,18 @@
   }
 
   function buildHappLink(subscriptionUrl) {
-    return `happ://add/${encodeURIComponent(subscriptionUrl)}`;
+    // Happ ожидает URL подписки без encodeURIComponent (см. 3x-ui / happ.su)
+    return `happ://add/${subscriptionUrl}`;
   }
 
   function buildV2rayTunLink(subscriptionUrl) {
-    return `v2raytun://import/${encodeURIComponent(subscriptionUrl)}`;
+    return `v2raytun://import/${subscriptionUrl}`;
+  }
+
+  function buildInstallRedirectUrl(deepLink) {
+    const url = new URL('/app/install.html', window.location.origin);
+    url.searchParams.set('url', deepLink);
+    return url.toString();
   }
 
   function openAppLink(app) {
@@ -855,8 +862,14 @@
     }
     const deepLink = app === 'happ' ? buildHappLink(link) : buildV2rayTunLink(link);
     tg?.HapticFeedback?.impactOccurred('medium');
-    if (tg?.openLink) tg.openLink(deepLink);
-    else window.location.href = deepLink;
+
+    // Telegram openLink принимает только https — custom schemes (happ://, v2raytun://) игнорируются
+    if (tg?.openLink) {
+      tg.openLink(buildInstallRedirectUrl(deepLink));
+      return;
+    }
+
+    window.location.href = deepLink;
   }
 
   function renderConnectButtons(link) {

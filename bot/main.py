@@ -197,6 +197,7 @@ def create_app(config: Config) -> web.Application:
     # Mini App (при NPM вместо compose-nginx статика отдаётся ботом)
     webapp_dir = Path(__file__).resolve().parent.parent / "webapp"
     webapp_index = webapp_dir / "index.html"
+    webapp_install = webapp_dir / "install.html"
     if webapp_index.is_file():
         async def _redirect_app(_request: web.Request) -> web.Response:
             raise web.HTTPFound("/app/")
@@ -204,9 +205,14 @@ def create_app(config: Config) -> web.Application:
         async def _serve_webapp(_request: web.Request) -> web.Response:
             return web.FileResponse(webapp_index)
 
+        async def _serve_webapp_install(_request: web.Request) -> web.Response:
+            return web.FileResponse(webapp_install)
+
         app.router.add_get("/app", _redirect_app)
         app.router.add_get("/app/", _serve_webapp)
         app.router.add_get("/app/index.html", _serve_webapp)
+        if webapp_install.is_file():
+            app.router.add_get("/app/install.html", _serve_webapp_install)
         logger.info("Webapp: %s", webapp_index)
 
     return app
