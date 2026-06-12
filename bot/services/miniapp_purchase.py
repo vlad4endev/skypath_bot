@@ -5,7 +5,7 @@ import logging
 from typing import Any
 
 from bot.config import Config, PLANS
-from bot.services.payment import YooKassaClient
+from bot.services.payment import PlategaClient
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo, PaymentRepo
 from database.models import PlanType, SubscriptionStatus
@@ -39,7 +39,7 @@ async def process_miniapp_purchase(
             bot=bot,
         )
 
-    yookassa = YooKassaClient(cfg)
+    platega = PlategaClient(cfg)
     limit_ip = plan_cfg.get("limit_ip", 3)
 
     async with async_session() as session:
@@ -60,7 +60,7 @@ async def process_miniapp_purchase(
             limit_ip=limit_ip,
         )
 
-        payment_data = await yookassa.create_payment(
+        payment_data = await platega.create_payment(
             amount=price,
             description=f"{cfg.BRAND_NAME} — {plan} / {months} мес.",
             metadata={
@@ -69,7 +69,6 @@ async def process_miniapp_purchase(
                 "months": str(months),
                 "subscription_id": str(sub.id),
             },
-            return_url=cfg.YOOKASSA_RETURN_URL,
         )
 
         await pay_repo.create(

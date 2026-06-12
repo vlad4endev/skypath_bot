@@ -9,7 +9,7 @@ echo "==> SkyPath VPN Bot setup"
 
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "Created .env from .env.example — fill in BOT_TOKEN, DB_URL, YooKassa, 3X-UI"
+  echo "Created .env from .env.example — fill in BOT_TOKEN, DB_URL, Platega, 3X-UI"
 else
   echo ".env already exists"
 fi

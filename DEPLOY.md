@@ -13,12 +13,12 @@ nano .env   # секреты
 ./scripts/ssl.sh   # после заполнения CERTBOT_EMAIL
 ```
 
-## 2. YooKassa — URL уведомлений
+## 2. Platega — URL callback
 
-В [личном кабинете YooKassa](https://yookassa.ru/) → Настройки → HTTP-уведомления:
+В [личном кабинете Platega](https://platega.io/) → Настройки укажи webhook:
 
 ```
-https://<NGINX_DOMAIN>/yookassa/webhook
+https://<NGINX_DOMAIN>/webhook/platega
 ```
 
 События: `payment.succeeded`, `payment.canceled` (если используете).

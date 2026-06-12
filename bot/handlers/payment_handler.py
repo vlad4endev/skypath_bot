@@ -14,7 +14,7 @@ from bot.config import Config, PLANS, MONTHS_LABELS
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo, PaymentRepo, PromoRepo
 from database.models import PlanType, SubscriptionStatus, PaymentStatus
-from bot.services.payment import YooKassaClient, parse_webhook_event
+from bot.services.payment import PlategaClient, parse_platega_webhook
 from bot.services.xui_client import XUIClient
 from bot.handlers.referral_handler import process_referral_bonus
 
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 config = Config()
 
 # Клиенты сервисов
-yookassa = YooKassaClient(config)
+platega = PlategaClient(config)
 xui = XUIClient(
     host=config.XUI_HOST,
     url_prefix=config.XUI_URL_PREFIX,
@@ -88,9 +88,9 @@ async def cb_confirm_plan(call: CallbackQuery):
             limit_ip=plan["limit_ip"],
         )
 
-        # Создаём платёж в YooKassa
+        # Создаём платёж в Platega
         try:
-            payment_data = await yookassa.create_payment(
+            payment_data = await platega.create_payment(
                 amount=price,
                 description=f"{config.BRAND_NAME} — {plan['name']} на {months} мес.",
                 metadata={
@@ -100,10 +100,9 @@ async def cb_confirm_plan(call: CallbackQuery):
                     "subscription_id": str(sub.id),
                     "promo_code": promo_code or "",
                 },
-                return_url=config.YOOKASSA_RETURN_URL,
             )
         except Exception as e:
-            logger.error(f"YooKassa create payment error: {e}")
+            logger.error("Platega create payment error: %s", e)
             await call.answer("❌ Ошибка создания платежа. Попробуй ещё раз.", show_alert=True)
             return
 
@@ -153,31 +152,38 @@ async def cb_confirm_plan(call: CallbackQuery):
 @router.callback_query(F.data.startswith("check_payment:"))
 async def cb_check_payment(call: CallbackQuery):
     """Пользователь нажал 'Я оплатил' — проверяем статус"""
-    payment_id = call.data.split(":")[1]
+    payment_ref = call.data.split(":")[1]
+
+    async with async_session() as session:
+        pay_repo = PaymentRepo(session)
+        payment = await pay_repo.get_by_payment_ref(payment_ref)
+
+    if not payment:
+        await call.answer("❌ Платёж не найден", show_alert=True)
+        return
+
+    if payment.status == PaymentStatus.SUCCEEDED:
+        await call.answer("✅ Подписка уже активирована!")
+        return
 
     try:
-        status = await yookassa.check_payment_status(payment_id)
+        status = await platega.check_payment_status(payment.yookassa_id or payment_ref)
     except Exception as e:
-        logger.error(f"Check payment error: {e}")
+        logger.error("Check payment error: %s", e)
         await call.answer("❌ Ошибка проверки. Попробуй позже.", show_alert=True)
         return
 
     if status == "succeeded":
         await call.answer("✅ Оплата прошла! Выдаём ключ...")
-        # Обработаем как webhook
-        async with async_session() as session:
-            pay_repo = PaymentRepo(session)
-            payment = await pay_repo.get_by_yookassa_id(payment_id)
-            if payment:
-                await _process_successful_payment(
-                    bot=call.bot,
-                    payment_id=payment_id,
-                    telegram_id=call.from_user.id,
-                    plan=payment.plan,
-                    months=payment.months,
-                    amount=payment.amount,
-                    subscription_id=payment.subscription_id,
-                )
+        await _process_successful_payment(
+            bot=call.bot,
+            payment_id=payment.order_id or payment_ref,
+            telegram_id=call.from_user.id,
+            plan=payment.plan,
+            months=payment.months,
+            amount=payment.amount,
+            subscription_id=payment.subscription_id,
+        )
     elif status == "pending":
         await call.answer("⏳ Оплата ещё не прошла. Подожди или попробуй снова.", show_alert=True)
     else:
@@ -446,37 +452,54 @@ async def on_web_app_data(message: Message):
     )
 
 
-# === Webhook от YooKassa ===
+# === Webhook от Platega ===
 
-async def yookassa_webhook(request: Request) -> web.Response:
-    """Webhook обработчик YooKassa платежей"""
+async def platega_webhook(request: Request) -> web.Response:
+    """Webhook обработчик Platega платежей"""
     try:
         body = await request.json()
-        logger.info("YooKassa webhook event: %s", body.get("event", "unknown"))
+        logger.info("Platega webhook: status=%s", body.get("status"))
 
-        event = parse_webhook_event(body)
+        event = parse_platega_webhook(body)
         if not event:
-            return web.Response(status=200)
+            return web.json_response({"ok": True, "skipped": True})
 
-        # Получаем бота из app
         bot: Bot = request.app["bot"]
 
-        if not event.get("telegram_id"):
-            logger.warning("Webhook without telegram_id in metadata")
-            return web.Response(status=200)
+        async with async_session() as session:
+            pay_repo = PaymentRepo(session)
+            user_repo = UserRepo(session)
+
+            payment = None
+            if event.get("order_id"):
+                payment = await pay_repo.get_by_order_id(event["order_id"])
+            if not payment and event.get("transaction_id"):
+                payment = await pay_repo.get_by_payment_ref(event["transaction_id"])
+
+            if not payment:
+                logger.warning("Platega webhook: payment not found %s", event)
+                return web.json_response({"ok": True, "skipped": True})
+
+            user = await user_repo.get_by_id(payment.user_id)
+            telegram_id = int(event["telegram_id"]) if event.get("telegram_id") else (
+                user.telegram_id if user else 0
+            )
+            if not telegram_id:
+                logger.warning("Platega webhook: telegram_id missing")
+                return web.json_response({"ok": True, "skipped": True})
 
         await _process_successful_payment(
             bot=bot,
-            payment_id=event["payment_id"],
-            telegram_id=int(event["telegram_id"]),
-            plan=event.get("plan") or "BASIC",
-            months=event.get("months", 1),
-            amount=event.get("amount", 0),
-            subscription_id=event.get("subscription_id", 0),
+            payment_id=payment.order_id or event.get("order_id") or event.get("transaction_id"),
+            telegram_id=telegram_id,
+            plan=event.get("plan") or payment.plan or "BASIC",
+            months=event.get("months") or payment.months or 1,
+            amount=event.get("amount") or payment.amount or 0,
+            subscription_id=event.get("subscription_id") or payment.subscription_id or 0,
         )
 
-        return web.Response(status=200)
+        return web.json_response({"ok": True})
 
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return web.Response(status=200)  # Всегда 200, иначе YooKassa будет повторять
+        logger.error("Platega webhook error: %s", e)
+        return web.json_response({"error": "processing failed"}, status=500)

@@ -16,7 +16,7 @@ if [ ! -f .env ]; then
     echo -e "${YELLOW}Создан .env из .env.example — заполни секреты:${NC}"
     echo "  nano .env"
     echo ""
-    echo "Обязательно: BOT_TOKEN, BRAND_NAME, YOOKASSA_*, XUI_*, WEBHOOK_BASE_URL, NGINX_DOMAIN, CERTBOT_EMAIL"
+    echo "Обязательно: BOT_TOKEN, BRAND_NAME, PLATEGA_*, XUI_*, WEBHOOK_BASE_URL, NGINX_DOMAIN, CERTBOT_EMAIL"
     exit 0
 fi
 

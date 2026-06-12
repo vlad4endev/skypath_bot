@@ -39,6 +39,12 @@ class UserRepo:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_id(self, user_id: int) -> Optional[User]:
+        result = await self.session.execute(
+            select(User).where(User.id == user_id)
+        )
+        return result.scalar_one_or_none()
+
     async def set_referrer_if_empty(self, user: User, referrer_telegram_id: int) -> bool:
         """Записать referrer_id один раз (self-referral и повтор не перезаписывают)."""
         if user.referrer_id or user.telegram_id == referrer_telegram_id:
@@ -238,6 +244,18 @@ class PaymentRepo:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_payment_ref(self, payment_ref: str) -> Optional[Payment]:
+        """Найти платёж по ID провайдера или order_id."""
+        result = await self.session.execute(
+            select(Payment).where(
+                or_(
+                    Payment.yookassa_id == payment_ref,
+                    Payment.order_id == payment_ref,
+                )
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_order_id(self, order_id: str) -> Optional[Payment]:
         result = await self.session.execute(
             select(Payment).where(Payment.order_id == order_id)
@@ -258,13 +276,16 @@ class PaymentRepo:
         )
         return result.scalar() or 0
 
-    async def claim_payment(self, yookassa_id: str) -> Optional[Payment]:
+    async def claim_payment(self, payment_ref: str) -> Optional[Payment]:
         """Идемпотентно пометить платёж оплаченным (только из PENDING)."""
         result = await self.session.execute(
             update(Payment)
             .where(
                 and_(
-                    Payment.yookassa_id == yookassa_id,
+                    or_(
+                        Payment.yookassa_id == payment_ref,
+                        Payment.order_id == payment_ref,
+                    ),
                     Payment.status == PaymentStatus.PENDING,
                 )
             )

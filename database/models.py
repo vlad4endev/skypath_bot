@@ -132,7 +132,7 @@ class Payment(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     subscription_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("subscriptions.id"))
 
-    # YooKassa
+    # ID транзакции платёжного провайдера (Platega)
     yookassa_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     order_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     payment_url: Mapped[str | None] = mapped_column(Text)

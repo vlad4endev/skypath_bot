@@ -89,7 +89,7 @@ def create_app(config: Config) -> web.Application:
     app.router.add_get("/api/user/{telegram_id}", miniapp_handler.get_user_info)
     app.router.add_get("/api/subscription/{telegram_id}", miniapp_handler.get_subscription)
     app.router.add_post("/api/pay", miniapp_handler.create_payment)
-    app.router.add_post("/yookassa/webhook", payment_handler.yookassa_webhook)
+    app.router.add_post("/webhook/platega", payment_handler.platega_webhook)
     app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
 
     return app

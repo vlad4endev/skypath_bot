@@ -11,7 +11,7 @@
 | Функция | n8n + NocoDB | Этот бот |
 |---|---|---|
 | База данных | NocoDB (ограниченный API) | **PostgreSQL** (полный SQL, индексы) |
-| Платежи | Webhook → n8n | **YooKassa прямо в боте** |
+| Платежи | Webhook → n8n | **Platega.io прямо в боте** |
 | VPN API | HTTP Request ноды | **Готовый XUIClient класс** |
 | Рассылки | Schedule Trigger | **APScheduler внутри бота** |
 | Надёжность | Зависит от n8n | **Standalone, Docker** |
@@ -26,7 +26,7 @@
 - **PostgreSQL 16** — основная база (вместо NocoDB)
 - **Redis** — FSM состояния + кеш
 - **SQLAlchemy 2.0** — ORM с async поддержкой
-- **YooKassa** — приём платежей по карте
+- **Platega.io** — приём платежей по карте
 - **3X-UI API** — управление VPN клиентами
 - **APScheduler** — cron задачи (уведомления, деактивация)
 - **Docker Compose** — деплой в один команды
@@ -42,7 +42,7 @@
 git clone https://github.com/vlad4endev/skypath_bot.git
 cd skypath_bot
 ./scripts/bootstrap.sh
-nano .env   # BOT_TOKEN, YooKassa, 3X-UI, домен
+nano .env   # BOT_TOKEN, Platega, 3X-UI, домен
 ```
 
 ### 2. Деплой одной командой
@@ -56,9 +56,9 @@ nano .env   # BOT_TOKEN, YooKassa, 3X-UI, домен
 
 ### 3. Webhook
 
-Бот сам ставит Telegram webhook при старте. В YooKassa укажи:
+Бот сам ставит Telegram webhook при старте. В Platega укажи callback URL:
 
-`https://<твой-домен>/yookassa/webhook`
+`https://<твой-домен>/webhook/platega`
 
 ---
 
@@ -74,8 +74,8 @@ nano .env   # BOT_TOKEN, YooKassa, 3X-UI, домен
 | `MINI_APP_URL` | URL Telegram Mini App |
 | `DB_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection string |
-| `YOOKASSA_SHOP_ID` | ID магазина YooKassa |
-| `YOOKASSA_SECRET_KEY` | Секретный ключ YooKassa |
+| `PLATEGA_MERCHANT_ID` | Merchant ID из личного кабинета Platega |
+| `PLATEGA_SECRET` | API Secret из личного кабинета Platega |
 | `XUI_HOST` | URL 3X-UI панели (с портом) |
 | `XUI_URL_PREFIX` | Префикс URL (из настроек панели) |
 | `XUI_USERNAME` | Логин в 3X-UI |

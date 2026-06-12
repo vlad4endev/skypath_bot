@@ -31,10 +31,9 @@ class Config:
     # Redis (FSM + кеш)
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # YooKassa
-    YOOKASSA_SHOP_ID: str = os.getenv("YOOKASSA_SHOP_ID", "")
-    YOOKASSA_SECRET_KEY: str = os.getenv("YOOKASSA_SECRET_KEY", "")
-    YOOKASSA_RETURN_URL: str = os.getenv("YOOKASSA_RETURN_URL", "https://t.me/SkyPathVPN_Bot")
+    # Platega.io
+    PLATEGA_MERCHANT_ID: str = os.getenv("PLATEGA_MERCHANT_ID", "")
+    PLATEGA_SECRET: str = os.getenv("PLATEGA_SECRET", "")
 
     # 3X-UI VPN Panel
     XUI_HOST: str = os.getenv("XUI_HOST", "https://178.208.87.245:2053")

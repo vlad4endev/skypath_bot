@@ -1,1 +1,1 @@
-"""External service clients (YooKassa, 3X-UI)."""
+"""External service clients (Platega, 3X-UI)."""

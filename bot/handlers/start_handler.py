@@ -235,7 +235,7 @@ async def cb_info(call: CallbackQuery):
 ✅ Инструкции для всех платформ
 
 <b>Платёж:</b>
-💳 Банковская карта (YooKassa)
+💳 Банковская карта (Platega)
 ₿ Крипто (USDT, BTC, ETH)
 """
     builder = InlineKeyboardBuilder()
