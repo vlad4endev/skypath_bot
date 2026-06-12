@@ -68,6 +68,7 @@ export function createSubscriptionHandlers(deps: BotDependencies): Composer<BotC
       const sub = await activateTrial(user.id, {
         firstName: user.firstName,
         lastName: user.lastName,
+        telegramId: Number(from.id),
       });
 
       const subLink = buildSubLink(deps.env, sub.subId!);

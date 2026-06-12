@@ -71,6 +71,7 @@ export async function getLatestSubscription(userId: number) {
 export async function activateTrial(userId: number, profile: {
   firstName?: string | null;
   lastName?: string | null;
+  telegramId?: number;
 }) {
   const hadTrial = await prisma.subscription.findFirst({
     where: { userId, status: SubscriptionStatus.TRIAL },
@@ -80,7 +81,11 @@ export async function activateTrial(userId: number, profile: {
   }
 
   const server = await getActiveServer();
-  const { uuid, email, subId } = generateClientIds(profile.firstName, profile.lastName);
+  const { uuid, email, subId } = generateClientIds(
+    profile.firstName,
+    profile.lastName,
+    profile.telegramId,
+  );
   const expiresAt = addDays(new Date(), TRIAL_DAYS);
   const expiryTime = expiresAt.getTime();
 
@@ -128,6 +133,7 @@ export async function activateAfterPayment(paymentId: number, env: Env) {
     const { uuid, email, subId } = generateClientIds(
       payment.user.firstName,
       payment.user.lastName,
+      Number(payment.user.telegramId),
     );
     const expiresAt = addMonths(now, months);
     await createClient(server, email, uuid, subId, 0, expiresAt.getTime());

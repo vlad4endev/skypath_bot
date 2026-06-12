@@ -6,8 +6,6 @@ import uuid
 import asyncio
 import logging
 import hashlib
-import random
-import string
 from datetime import datetime, timedelta
 from typing import Any, Optional, Callable, Awaitable, TypeVar
 
@@ -195,10 +193,23 @@ class XUIClient:
         return str(uuid.uuid4())
 
     def _gen_email(self, first_name: str, last_name: str) -> str:
-        clean = f"{first_name}{last_name}".lower()
-        clean = "".join(c for c in clean if c.isalnum())
-        suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        return f"{clean or 'user'}_{suffix}"
+        """Идентификатор клиента в 3X-UI: имя+фамилия, только буквы."""
+        raw = f"{(first_name or '').strip()}{(last_name or '').strip()}"
+        clean = "".join(c for c in raw if c.isalpha())
+        return clean.lower() if clean else "user"
+
+    async def _resolve_client_email(
+        self,
+        first_name: str,
+        last_name: str,
+        telegram_id: int,
+    ) -> str:
+        email = self._gen_email(first_name, last_name)
+        if email == "user":
+            return f"user{telegram_id}"
+        if await self._verify_client_exists(email):
+            return f"{email}{telegram_id}"
+        return email
 
     def _gen_sub_id(self) -> str:
         return hashlib.md5(str(uuid.uuid4()).encode()).hexdigest()[:16]
@@ -600,7 +611,7 @@ class XUIClient:
         days: int = 0,
     ) -> dict:
         client_uuid = self._gen_uuid()
-        email = self._gen_email(first_name, last_name)
+        email = await self._resolve_client_email(first_name, last_name, telegram_id)
         sub_id = self._gen_sub_id()
         expiry = self._expiry_unix_days(days) if days > 0 else self._expiry_unix(months)
         traffic_bytes = traffic_gb * 1024**3 if traffic_gb else 0
@@ -756,7 +767,7 @@ class XUIClient:
         limit_ip: int,
     ) -> dict:
         client_uuid = self._gen_uuid()
-        email = self._gen_email(first_name, last_name)
+        email = await self._resolve_client_email(first_name, last_name, telegram_id)
         sub_id = self._gen_sub_id()
         expiry = self._expiry_unix(months)
         inbound = await self._get_inbound(inbound_ids[0]) if inbound_ids else None

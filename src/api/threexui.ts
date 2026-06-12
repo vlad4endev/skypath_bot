@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { v4 as uuidv4 } from "uuid";
 import type { Server } from "@prisma/client";
 
@@ -87,16 +87,29 @@ async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
   throw new Error(`3x-ui ${label} failed after ${MAX_RETRIES} attempts: ${String(lastError)}`);
 }
 
-export function generateClientIds(firstName?: string | null, lastName?: string | null): {
+export function generateClientEmail(
+  firstName?: string | null,
+  lastName?: string | null,
+  telegramId?: number,
+): string {
+  const raw = `${(firstName ?? "").trim()}${(lastName ?? "").trim()}`;
+  const clean = raw.replace(/[^\p{L}]/gu, "").toLowerCase();
+  if (clean) {
+    return clean;
+  }
+  return telegramId ? `user${telegramId}` : "user";
+}
+
+export function generateClientIds(
+  firstName?: string | null,
+  lastName?: string | null,
+  telegramId?: number,
+): {
   uuid: string;
   email: string;
   subId: string;
 } {
-  const clean = `${firstName ?? ""}${lastName ?? ""}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-  const suffix = randomBytes(3).toString("hex");
-  const email = `${clean || "user"}_${suffix}`;
+  const email = generateClientEmail(firstName, lastName, telegramId);
   const subId = createHash("md5").update(uuidv4()).digest("hex").slice(0, 16);
   return { uuid: uuidv4(), email, subId };
 }
