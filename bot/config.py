@@ -42,6 +42,7 @@ class Config:
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
     PORT: int = int(os.getenv("PORT", "8080"))
     MINI_APP_URL: str = os.getenv("MINI_APP_URL", "https://your-domain.com/app")
+    CABINET_URL: str = os.getenv("CABINET_URL", "")
     WELCOME_PHOTO_URL: str = os.getenv("WELCOME_PHOTO_URL", "")
 
     # Database (PostgreSQL)
@@ -105,6 +106,10 @@ class Config:
             self.ADMIN_PASSWORD_SALT = self.WEBHOOK_SECRET[:32] or "skypath-admin-salt"
         if not self.WEB_PASSWORD_PEPPER:
             self.WEB_PASSWORD_PEPPER = self.WEBHOOK_SECRET or "skypath-web-pepper"
+        if not self.CABINET_URL.strip():
+            self.CABINET_URL = f"{self.WEBHOOK_BASE_URL.rstrip('/')}/cabinet"
+        else:
+            self.CABINET_URL = self.CABINET_URL.strip().rstrip("/")
         self.XUI_INBOUND_IDS = {
             "🇷🇺 Россия": int(os.getenv("INBOUND_RU", "1")),
             "🇺🇸 США": int(os.getenv("INBOUND_US", "19")),

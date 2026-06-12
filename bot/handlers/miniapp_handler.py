@@ -83,6 +83,7 @@ async def get_config(_request: web.Request) -> web.Response:
         "brand_name": config.BRAND_NAME,
         "support_url": config.SUPPORT_URL,
         "bot_username": config.BOT_USERNAME,
+        "cabinet_url": config.CABINET_URL,
         "months_labels": MONTHS_LABELS,
     })
 
@@ -194,6 +195,7 @@ async def get_dashboard(request: web.Request) -> web.Response:
     return web.json_response({
         "brand_name": config.BRAND_NAME,
         "support_url": config.SUPPORT_URL,
+        "cabinet_url": config.CABINET_URL,
         "user": {
             "telegram_id": telegram_id,
             "full_name": user.full_name if user else None,
