@@ -471,7 +471,8 @@ class AdminRepo:
         sub.vpn_key = vpn_key
         if inbound_id:
             sub.inbound_id = inbound_id
-        sub.expires_at = expires_at
+        if expires_at is not None:
+            sub.expires_at = expires_at
         sub.limit_ip = limit_ip
         sub.traffic_gb = traffic_gb
         sub.status = status

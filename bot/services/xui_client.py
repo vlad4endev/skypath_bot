@@ -342,36 +342,139 @@ class XUIClient:
             "enabled": bool(client.get("enable", True)),
         }
 
+    @staticmethod
+    def _parse_settings_raw(settings_raw: Any) -> dict[str, Any]:
+        if isinstance(settings_raw, str) and settings_raw.strip():
+            try:
+                parsed = json.loads(settings_raw)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        if isinstance(settings_raw, dict):
+            return settings_raw
+        return {}
+
+    @staticmethod
+    def _client_has_expiry(client: dict[str, Any]) -> bool:
+        try:
+            return int(client.get("expiryTime") or 0) > 0
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _merge_client_records(*records: dict[str, Any]) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        for record in records:
+            if record:
+                merged.update(record)
+        return merged
+
+    @classmethod
+    def _extract_client_details_from_get_response(
+        cls,
+        fresh: dict[str, Any],
+        email: str,
+    ) -> dict[str, Any]:
+        details = dict(fresh)
+        for client in fresh.get("clients") or []:
+            if not isinstance(client, dict):
+                continue
+            if not email or client.get("email") == email:
+                details = cls._merge_client_records(details, client)
+                break
+
+        settings = cls._parse_settings_raw(fresh.get("settings"))
+        for client in settings.get("clients") or []:
+            if not isinstance(client, dict):
+                continue
+            if client.get("email") == email:
+                details = cls._merge_client_records(details, client)
+                break
+        return details
+
     def _parse_inbound_clients(self, inbound: dict[str, Any]) -> list[dict[str, Any]]:
         inbound_id = int(inbound.get("id") or 0)
         clients: list[dict[str, Any]] = []
+        settings = self._parse_settings_raw(inbound.get("settings"))
 
-        settings_raw = inbound.get("settings")
-        if isinstance(settings_raw, str) and settings_raw.strip():
-            try:
-                settings = json.loads(settings_raw)
-            except json.JSONDecodeError:
-                settings = {}
-        elif isinstance(settings_raw, dict):
-            settings = settings_raw
-        else:
-            settings = {}
-
-        for client in settings.get("clients") or []:
-            if isinstance(client, dict) and client.get("email"):
-                clients.append({**client, "_inbound_id": inbound_id})
-
+        stats_by_email: dict[str, dict[str, Any]] = {}
         for stat in inbound.get("clientStats") or []:
             if not isinstance(stat, dict):
                 continue
-            email = stat.get("email")
+            email = str(stat.get("email") or "").strip()
+            if email:
+                stats_by_email[email] = stat
+
+        seen_emails: set[str] = set()
+        for client in settings.get("clients") or []:
+            if not isinstance(client, dict):
+                continue
+            email = str(client.get("email") or "").strip()
             if not email:
                 continue
-            if any(c.get("email") == email for c in clients):
+            seen_emails.add(email)
+            stat = stats_by_email.get(email, {})
+            # Новые 3X-UI: settings.clients slim (email/enable), expiryTime в clientStats
+            merged = self._merge_client_records(stat, client, {"_inbound_id": inbound_id})
+            clients.append(merged)
+
+        for email, stat in stats_by_email.items():
+            if email in seen_emails:
                 continue
             clients.append({**stat, "_inbound_id": inbound_id})
 
         return clients
+
+    async def get_inbound_detail(self, inbound_id: int) -> dict[str, Any] | None:
+        """GET /panel/api/inbounds/get/{id} — полный inbound с settings.clients."""
+        cookie = await self._get_cookie()
+        url = f"{self._base_url()}/panel/api/inbounds/get/{inbound_id}"
+
+        async def _fetch():
+            async with httpx.AsyncClient(verify=False, timeout=15) as client:
+                resp = await client.get(url, headers=self._auth_headers(cookie))
+            data = resp.json()
+            if resp.status_code >= 400 or not data.get("success", False):
+                raise RuntimeError(data.get("msg", f"inbounds/get HTTP {resp.status_code}"))
+            obj = data.get("obj", data)
+            return obj if isinstance(obj, dict) else None
+
+        return await self._retry(_fetch, "inbounds/get")
+
+    async def enrich_client_from_panel(self, client: dict[str, Any]) -> dict[str, Any]:
+        """Дополнить slim-запись клиента expiryTime/subId/uuid из API панели."""
+        email = str(client.get("email") or "").strip()
+        inbound_id = client.get("_inbound_id")
+        if not email:
+            return client
+
+        layers: list[dict[str, Any]] = [client]
+
+        try:
+            fresh = await self.get_client(email)
+            if isinstance(fresh, dict):
+                layers.append(self._extract_client_details_from_get_response(fresh, email))
+                if self._client_has_expiry(fresh):
+                    layers.append({"expiryTime": int(fresh["expiryTime"])})
+        except Exception as e:
+            logger.warning("enrich_client get_client(%s): %s", email, e)
+
+        if inbound_id and not any(self._client_has_expiry(layer) for layer in layers):
+            try:
+                inbound = await self.get_inbound_detail(int(inbound_id))
+                if inbound:
+                    for parsed in self._parse_inbound_clients(inbound):
+                        if str(parsed.get("email") or "").strip() == email:
+                            layers.append(parsed)
+                            break
+            except Exception as e:
+                logger.warning("enrich_client inbounds/get(%s) for %s: %s", inbound_id, email, e)
+
+        merged = self._merge_client_records(*layers)
+        merged["email"] = email
+        if inbound_id:
+            merged["_inbound_id"] = inbound_id
+        return merged
 
     async def list_all_clients(self) -> list[dict[str, Any]]:
         """Все VPN-клиенты из inbounds (для массовой синхронизации)."""
@@ -441,24 +544,7 @@ class XUIClient:
         if match is None:
             return None
 
-        client_email = str(match.get("email") or "").strip()
-        if not client_email:
-            return match
-
-        try:
-            fresh = await self.get_client(client_email)
-        except Exception as e:
-            logger.warning("find_panel_client: get_client(%s) failed: %s", client_email, e)
-            return match
-
-        if isinstance(fresh, dict) and "clients" in fresh:
-            clients = fresh.get("clients") or []
-            if clients and isinstance(clients[0], dict):
-                merged = {**clients[0], "_inbound_id": match.get("_inbound_id")}
-                return merged
-        if isinstance(fresh, dict):
-            return {**fresh, "_inbound_id": match.get("_inbound_id")}
-        return match
+        return await self.enrich_client_from_panel(match)
 
     async def get_servers_status(self, inbound_ids: dict[str, int]) -> list[dict[str, Any]]:
         """Статус серверов по inbound ID из панели."""

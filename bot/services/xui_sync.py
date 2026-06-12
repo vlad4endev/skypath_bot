@@ -85,14 +85,18 @@ def subscription_expects_xui_client(sub: Subscription | None) -> bool:
 
 
 def _expiry_from_panel(client: dict[str, Any]) -> datetime | None:
-    raw = client.get("expiryTime") or 0
+    raw = client.get("expiryTime")
+    if raw is None:
+        return None
     try:
-        expiry_ms = int(raw)
+        expiry_raw = int(raw)
     except (TypeError, ValueError):
         return None
-    if expiry_ms <= 0:
+    if expiry_raw <= 0:
         return None
-    return datetime.utcfromtimestamp(expiry_ms / 1000)
+    # 3X-UI: миллисекунды; старые ответы могут быть в секундах
+    ts = expiry_raw / 1000.0 if expiry_raw > 10_000_000_000 else float(expiry_raw)
+    return datetime.utcfromtimestamp(ts)
 
 
 def _traffic_gb_from_panel(client: dict[str, Any]) -> int:
@@ -330,6 +334,7 @@ async def import_panel_client(
             message=f"нет tgId в панели ({email})",
         )
 
+    client = await xui.enrich_client_from_panel(client)
     fields = panel_client_fields_for_import(client)
     if dry_run:
         expires = fields["expires_at"]
