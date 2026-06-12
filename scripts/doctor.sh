@@ -39,8 +39,15 @@ docker network inspect skypath_bot_skypath_net --format '{{range .Containers}}{{
 echo ""
 
 echo "--- health ---"
-echo -n "8080: "; curl -s --max-time 2 http://127.0.0.1:8080/health 2>/dev/null || echo "нет ответа"
 echo -n "${BOT_HP}: "; curl -s --max-time 2 "http://127.0.0.1:${BOT_HP}/health" 2>/dev/null || echo "нет ответа"
+echo ""
+
+echo "--- NPM → bot ---"
+if [ -x "$(dirname "$0")/npm-connect.sh" ]; then
+    "$(dirname "$0")/npm-connect.sh" || true
+else
+    echo "скрипт npm-connect.sh не найден"
+fi
 echo ""
 
 if docker compose config --services 2>/dev/null | grep -qx postgres; then

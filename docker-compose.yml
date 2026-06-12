@@ -45,7 +45,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${BOT_HOST_PORT:-8084}:8080"
+      - "${BOT_HOST_PORT:-8084}:8080"
     volumes:
       - ./webapp:/app/webapp:ro
     networks:

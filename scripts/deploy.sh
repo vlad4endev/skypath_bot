@@ -121,12 +121,8 @@ ensure_docker_network() {
         docker network create "$SKYPATH_NET"
         echo -e "${GREEN}✓ Создана сеть ${SKYPATH_NET}${NC}"
     fi
-    local npm
-    npm=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -Ei 'nginx.?proxy.?manager|^npm$' | head -1 || true)
-    if [ -n "$npm" ]; then
-        if docker network connect "$SKYPATH_NET" "$npm" 2>/dev/null; then
-            echo -e "${GREEN}✓ NPM (${npm}) подключён к ${SKYPATH_NET}${NC}"
-        fi
+    if [ -x "$(dirname "$0")/npm-connect.sh" ]; then
+        "$(dirname "$0")/npm-connect.sh" || true
     fi
 }
 
