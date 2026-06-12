@@ -5,6 +5,8 @@ Telegram Bot + Mini App для VPN сервиса
 
 import logging
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
@@ -49,7 +51,10 @@ async def on_shutdown(bot: Bot):
 
 
 def create_app(config: Config) -> web.Application:
-    bot = Bot(token=config.BOT_TOKEN, parse_mode="HTML")
+    bot = Bot(
+        token=config.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
     storage = RedisStorage.from_url(config.REDIS_URL)
     dp = Dispatcher(storage=storage)
 
