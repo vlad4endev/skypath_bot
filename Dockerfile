@@ -1,3 +1,12 @@
+# Admin React build
+FROM node:20-slim AS admin-build
+WORKDIR /build
+COPY admin/package.json admin/package-lock.json ./
+RUN npm ci
+COPY admin/index.html admin/vite.config.ts admin/tsconfig.json admin/tsconfig.node.json ./
+COPY admin/src ./src
+RUN npm run build
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -14,9 +23,10 @@ COPY database/ ./database/
 COPY alembic/ ./alembic/
 COPY scripts/ ./scripts/
 COPY data/ ./data/
-COPY admin/ ./admin/
 COPY webapp/ ./webapp/
 COPY alembic.ini .
+
+COPY --from=admin-build /build/dist ./admin/dist
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app

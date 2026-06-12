@@ -683,23 +683,29 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
     ]
     app.router.add_routes(routes)
 
-    # Static admin UI
+    # Static admin UI (React build in admin/dist)
     admin_dir = Path(__file__).resolve().parent.parent.parent / "admin"
-    admin_index = admin_dir / "index.html"
+    admin_dist = admin_dir / "dist"
+    admin_index = admin_dist / "index.html"
 
     if admin_index.is_file():
+        assets_dir = admin_dist / "assets"
+        if assets_dir.is_dir():
+            app.router.add_static("/admin/assets", assets_dir, show_index=False)
 
         async def _redirect_admin(_request: web.Request) -> web.Response:
             raise web.HTTPFound("/admin/")
 
-        async def _serve_admin(_request: web.Request) -> web.Response:
+        async def _serve_admin_spa(_request: web.Request) -> web.Response:
             return web.FileResponse(admin_index)
 
         app.router.add_get("/admin", _redirect_admin)
-        app.router.add_get("/admin/", _serve_admin)
-        app.router.add_static("/admin/static", admin_dir / "static", show_index=False)
-        logger.info("Admin panel: %s", admin_index)
+        app.router.add_get("/admin/", _serve_admin_spa)
+        for sub_path in ("users", "payments", "promos"):
+            app.router.add_get(f"/admin/{sub_path}", _serve_admin_spa)
+            app.router.add_get(f"/admin/{sub_path}/", _serve_admin_spa)
+        logger.info("Admin panel (React): %s", admin_index)
     else:
-        logger.warning("Admin panel index not found at %s", admin_index)
+        logger.warning("Admin panel build not found at %s — run: cd admin && npm run build", admin_index)
 
     return auth
