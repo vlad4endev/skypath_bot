@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import type { PromoRow } from '../types';
 import { Badge, Modal, Spinner } from '../components/ui';
 import { fmtDate } from '../utils/format';
+import { AssignDiscountModal, type AssignDiscountPrefill } from '../modals/AssignDiscountModal';
 
 interface PromosPageProps {
   onToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
@@ -30,6 +31,8 @@ export function PromosPage({ onToast }: PromosPageProps) {
   const [onePerUser, setOnePerUser] = useState(true);
   const [isActive, setIsActive] = useState(true);
   const [expiresAt, setExpiresAt] = useState('');
+  const [assignPrefill, setAssignPrefill] = useState<AssignDiscountPrefill | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -132,6 +135,20 @@ export function PromosPage({ onToast }: PromosPageProps) {
     load();
   };
 
+  const openAssign = (p: PromoRow) => {
+    setAssignPrefill({
+      promo_id: p.id,
+      discount_pct: p.discount_pct,
+      discount_amount: p.discount_amount,
+      plans: p.plans,
+      months: p.months,
+      min_amount: p.min_amount,
+      expires_at: p.expires_at,
+      source_name: p.name || p.code,
+    });
+    setAssignOpen(true);
+  };
+
   const statusBadge = (p: PromoRow) => {
     if (!p.is_active) return <Badge variant="muted">ВЫКЛ</Badge>;
     if (p.is_valid) return <Badge variant="success">АКТИВЕН</Badge>;
@@ -187,6 +204,9 @@ export function PromosPage({ onToast }: PromosPageProps) {
                       <td>{statusBadge(p)}</td>
                       <td>{fmtDate(p.expires_at) === '—' ? '∞' : fmtDate(p.expires_at)}</td>
                       <td className="actions">
+                        <button type="button" className="btn btn--ghost btn--sm" onClick={() => openAssign(p)}>
+                          🎁 Назначить
+                        </button>
                         <button type="button" className="btn btn--ghost btn--sm" onClick={() => openEdit(p)}>
                           Изменить
                         </button>
@@ -275,6 +295,13 @@ export function PromosPage({ onToast }: PromosPageProps) {
           <span>Активен</span>
         </label>
       </Modal>
+
+      <AssignDiscountModal
+        open={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        onToast={onToast}
+        prefill={assignPrefill}
+      />
     </div>
   );
 }

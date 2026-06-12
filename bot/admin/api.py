@@ -130,6 +130,7 @@ def _promo_json(p: PromoCode) -> dict[str, Any]:
         "max_uses": p.max_uses,
         "uses_count": p.uses_count,
         "one_per_user": p.one_per_user,
+        "assigned_telegram_id": p.assigned_telegram_id,
         "is_active": p.is_active,
         "is_valid": p.is_valid,
         "expires_at": _dt(p.expires_at),
@@ -367,6 +368,162 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         if not ok:
             return _error("User not found", 404)
         return _json({"ok": True})
+
+    async def users_assign_discount(request: web.Request) -> web.Response:
+        user_id = int(request.match_info["user_id"])
+        body = await _body(request)
+        bot = request.app.get("bot")
+
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            user = await repo.get_user_detail(user_id)
+            if not user:
+                return _error("User not found", 404)
+
+            discount_pct = int(body.get("discount_pct", 0))
+            discount_amount = int(body.get("discount_amount", 0))
+            plans = _parse_str_list(body.get("plans"))
+            months = _parse_str_list(body.get("months"))
+            min_amount = int(body.get("min_amount", 0))
+            expires_at = _parse_dt(body.get("expires_at"))
+            source_name = body.get("source_name")
+            custom_message = body.get("message") or body.get("custom_message")
+            code = (body.get("code") or "").strip().upper() or None
+            send_notification = body.get("send_notification", True)
+
+            promo_id = body.get("promo_id")
+            promotion_id = body.get("promotion_id")
+            if promo_id:
+                promo = await repo.get_promo(int(promo_id))
+                if not promo:
+                    return _error("Promo not found", 404)
+                discount_pct = promo.discount_pct
+                discount_amount = promo.discount_amount
+                plans = promo.plans
+                months = promo.months
+                min_amount = promo.min_amount
+                expires_at = expires_at or promo.expires_at
+                source_name = source_name or promo.name or promo.code
+            elif promotion_id:
+                promotion = await repo.get_promotion(int(promotion_id))
+                if not promotion:
+                    return _error("Promotion not found", 404)
+                discount_pct = promotion.discount_pct
+                discount_amount = promotion.discount_amount
+                plans = promotion.plans
+                months = promotion.months
+                min_amount = promotion.min_amount
+                expires_at = expires_at or promotion.ends_at
+                source_name = source_name or promotion.name
+
+        from bot.services.assign_discount import assign_personal_discount
+
+        try:
+            result = await assign_personal_discount(
+                bot=bot,
+                user=user,
+                discount_pct=discount_pct,
+                discount_amount=discount_amount,
+                plans=plans,
+                months=months,
+                min_amount=min_amount,
+                expires_at=expires_at,
+                code=code,
+                name=body.get("name"),
+                description=body.get("description"),
+                custom_message=custom_message,
+                source_name=source_name,
+                send_notification=bool(send_notification),
+            )
+        except ValueError as e:
+            return _error(str(e), 400)
+
+        if send_notification and bot and not result["notified"]:
+            return _json({
+                **result,
+                "warning": "Промокод создан, но сообщение в Telegram не доставлено",
+            })
+
+        return _json(result)
+
+    async def discounts_assign_by_telegram(request: web.Request) -> web.Response:
+        """Назначить скидку по telegram_id (из карточки акции/промокода)."""
+        body = await _body(request)
+        try:
+            telegram_id = int(body.get("telegram_id", 0))
+        except (TypeError, ValueError):
+            telegram_id = 0
+        if not telegram_id:
+            return _error("telegram_id required")
+
+        from bot.services.assign_discount import assign_personal_discount, resolve_user
+
+        try:
+            user = await resolve_user(telegram_id=telegram_id)
+        except ValueError as e:
+            return _error(str(e), 404)
+
+        bot = request.app.get("bot")
+        async with async_session() as session:
+            repo = AdminRepo(session)
+
+            discount_pct = int(body.get("discount_pct", 0))
+            discount_amount = int(body.get("discount_amount", 0))
+            plans = _parse_str_list(body.get("plans"))
+            months = _parse_str_list(body.get("months"))
+            min_amount = int(body.get("min_amount", 0))
+            expires_at = _parse_dt(body.get("expires_at"))
+            source_name = body.get("source_name")
+            custom_message = body.get("message") or body.get("custom_message")
+            code = (body.get("code") or "").strip().upper() or None
+            send_notification = body.get("send_notification", True)
+
+            promo_id = body.get("promo_id")
+            promotion_id = body.get("promotion_id")
+            if promo_id:
+                promo = await repo.get_promo(int(promo_id))
+                if not promo:
+                    return _error("Promo not found", 404)
+                discount_pct = promo.discount_pct
+                discount_amount = promo.discount_amount
+                plans = promo.plans
+                months = promo.months
+                min_amount = promo.min_amount
+                expires_at = expires_at or promo.expires_at
+                source_name = source_name or promo.name or promo.code
+            elif promotion_id:
+                promotion = await repo.get_promotion(int(promotion_id))
+                if not promotion:
+                    return _error("Promotion not found", 404)
+                discount_pct = promotion.discount_pct
+                discount_amount = promotion.discount_amount
+                plans = promotion.plans
+                months = promotion.months
+                min_amount = promotion.min_amount
+                expires_at = expires_at or promotion.ends_at
+                source_name = source_name or promotion.name
+
+        try:
+            result = await assign_personal_discount(
+                bot=bot,
+                user=user,
+                discount_pct=discount_pct,
+                discount_amount=discount_amount,
+                plans=plans,
+                months=months,
+                min_amount=min_amount,
+                expires_at=expires_at,
+                code=code,
+                name=body.get("name"),
+                description=body.get("description"),
+                custom_message=custom_message,
+                source_name=source_name,
+                send_notification=bool(send_notification),
+            )
+        except ValueError as e:
+            return _error(str(e), 400)
+
+        return _json(result)
 
     # ── Subscriptions ──────────────────────────────────────────
 
@@ -804,6 +961,8 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         web.get("/admin/api/users/{user_id}/photo", users_photo),
         web.patch("/admin/api/users/{user_id}", users_update),
         web.delete("/admin/api/users/{user_id}", users_delete),
+        web.post("/admin/api/users/{user_id}/assign-discount", users_assign_discount),
+        web.post("/admin/api/discounts/assign", discounts_assign_by_telegram),
         web.post("/admin/api/users/{user_id}/sync-xui", user_sync_xui),
         web.get("/admin/api/xui/status", xui_status),
         web.post("/admin/api/xui/sync", xui_sync),

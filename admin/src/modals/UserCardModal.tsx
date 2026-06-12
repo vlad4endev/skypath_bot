@@ -5,6 +5,7 @@ import type { UserDetail } from '../types';
 import { Badge, Modal, Spinner } from '../components/ui';
 import { fmtDate, fmtExpiry, fmtMoney, subIsExpired, userInitials } from '../utils/format';
 import { EditSubModal } from './EditSubModal';
+import { AssignDiscountModal } from './AssignDiscountModal';
 
 interface UserCardModalProps {
   userId: number | null;
@@ -26,6 +27,7 @@ export function UserCardModal({ userId, onClose, onRefresh, onXuiSync, onToast }
   const [loading, setLoading] = useState(true);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [editSubId, setEditSubId] = useState<number | null>(null);
+  const [assignDiscountOpen, setAssignDiscountOpen] = useState(false);
 
   const load = async (id: number) => {
     setLoading(true);
@@ -98,6 +100,13 @@ export function UserCardModal({ userId, onClose, onRefresh, onXuiSync, onToast }
               </button>
               <button type="button" className="btn btn--primary" onClick={() => onXuiSync(user.id)}>
                 <RefreshCw size={16} /> Синхр. 3X-UI
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => setAssignDiscountOpen(true)}
+              >
+                🎁 Назначить скидку
               </button>
               <button
                 type="button"
@@ -273,6 +282,19 @@ export function UserCardModal({ userId, onClose, onRefresh, onXuiSync, onToast }
         onClose={() => setEditSubId(null)}
         onSaved={() => userId && load(userId)}
         onToast={onToast}
+      />
+
+      <AssignDiscountModal
+        open={assignDiscountOpen}
+        onClose={() => setAssignDiscountOpen(false)}
+        onToast={onToast}
+        userId={user?.id ?? null}
+        telegramId={user?.telegram_id ?? null}
+        userLabel={
+          user
+            ? [user.first_name, user.last_name].filter(Boolean).join(' ') || user.full_name
+            : undefined
+        }
       />
     </>
   );

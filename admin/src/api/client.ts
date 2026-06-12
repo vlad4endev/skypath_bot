@@ -157,6 +157,18 @@ export const api = {
   deletePromo: (id: number) =>
     request<{ ok: boolean }>(`/admin/api/promos/${id}`, { method: 'DELETE' }),
 
+  assignUserDiscount: (userId: number, data: Record<string, unknown>) =>
+    request<{ code: string; notified: boolean; warning?: string; discount_label: string }>(
+      `/admin/api/users/${userId}/assign-discount`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  assignDiscountByTelegram: (data: Record<string, unknown>) =>
+    request<{ code: string; notified: boolean; warning?: string; discount_label: string }>(
+      '/admin/api/discounts/assign',
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
   promotions: () => request<PromotionRow[]>('/admin/api/promotions'),
 
   createPromotion: (data: Record<string, unknown>) =>

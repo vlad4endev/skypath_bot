@@ -152,6 +152,8 @@ async def calculate_discount(
             promo_error = "Промокод не подходит к этому тарифу или сроку"
         elif promo_obj.one_per_user and await promo_repo.user_has_used(promo_obj.id, user_id):
             promo_error = "Вы уже использовали этот промокод"
+        elif promo_obj.assigned_telegram_id and promo_obj.assigned_telegram_id != telegram_id:
+            promo_error = "Промокод предназначен для другого пользователя"
         else:
             promo_price = _apply_discount(
                 base_price, promo_obj.discount_pct, promo_obj.discount_amount

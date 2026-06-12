@@ -547,6 +547,40 @@ class PromoRepo:
         )
         return result.scalar_one_or_none() is not None
 
+    async def create_personal(
+        self,
+        *,
+        code: str,
+        telegram_id: int,
+        discount_pct: int = 0,
+        discount_amount: int = 0,
+        plans: list | None = None,
+        months: list | None = None,
+        min_amount: int = 0,
+        expires_at: datetime | None = None,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> PromoCode:
+        promo = PromoCode(
+            code=code.upper().strip(),
+            name=name,
+            description=description,
+            discount_pct=discount_pct,
+            discount_amount=discount_amount,
+            plans=plans,
+            months=months,
+            min_amount=min_amount,
+            max_uses=1,
+            one_per_user=True,
+            assigned_telegram_id=telegram_id,
+            is_active=True,
+            expires_at=expires_at,
+        )
+        self.session.add(promo)
+        await self.session.commit()
+        await self.session.refresh(promo)
+        return promo
+
     async def use(
         self,
         promo: PromoCode,
