@@ -8,6 +8,17 @@ COPY admin/index.html admin/vite.config.ts admin/tsconfig.json admin/tsconfig.no
 COPY admin/src ./src
 RUN npm run build
 
+# Web cabinet React build
+FROM node:20-slim AS cabinet-build
+WORKDIR /build
+ENV NODE_OPTIONS=--max-old-space-size=512
+COPY cabinet/package.json cabinet/package-lock.json ./
+RUN npm ci
+COPY cabinet/index.html cabinet/vite.config.ts cabinet/tsconfig.json cabinet/tsconfig.node.json ./
+COPY cabinet/public ./public
+COPY cabinet/src ./src
+RUN npm run build
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -28,6 +39,7 @@ COPY webapp/ ./webapp/
 COPY alembic.ini .
 
 COPY --from=admin-build /build/dist ./admin/dist
+COPY --from=cabinet-build /build/dist ./cabinet/dist
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app

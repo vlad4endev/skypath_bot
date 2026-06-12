@@ -434,6 +434,7 @@ class AdminRepo:
                     User.username.ilike(like),
                     User.first_name.ilike(like),
                     User.last_name.ilike(like),
+                    User.web_email.ilike(like),
                 ))
         if banned == "true":
             filters.append(User.is_banned == True)  # noqa: E712

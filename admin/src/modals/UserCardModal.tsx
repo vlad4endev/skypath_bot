@@ -164,6 +164,12 @@ export function UserCardModal({ userId, onClose, onRefresh, onXuiSync, onToast }
                     </>
                   )}
                   {tg?.is_premium && <Badge variant="warning">Premium</Badge>}
+                  {user.web_email && (
+                    <>
+                      {' · '}
+                      <span>{user.web_email}</span>
+                    </>
+                  )}
                 </div>
                 {tg?.bio && <p className="user-card-bio">{tg.bio}</p>}
                 <div className="user-card-tags">

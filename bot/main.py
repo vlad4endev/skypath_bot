@@ -30,6 +30,7 @@ from bot.middlewares.throttle import ThrottlingMiddleware
 from bot.middlewares.user import UserMiddleware
 from bot.scheduler import setup_scheduler
 from bot.admin.api import setup_admin_routes
+from bot.cabinet.api import setup_cabinet_routes
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s: %(message)s"
 
@@ -189,10 +190,12 @@ def create_app(config: Config) -> web.Application:
     app.router.add_get("/api/discount/preview/{telegram_id}", miniapp_handler.preview_discount)
     app.router.add_post("/api/promo/validate", miniapp_handler.validate_promo)
     app.router.add_get("/api/payment/{order_id}/status", miniapp_handler.get_payment_status)
+    app.router.add_post("/api/register", miniapp_handler.register_web_account)
     app.router.add_post("/api/provision", miniapp_handler.provision_vpn)
     app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
 
     setup_admin_routes(app, config)
+    setup_cabinet_routes(app, config)
 
     # Mini App (при NPM вместо compose-nginx статика отдаётся ботом)
     webapp_dir = Path(__file__).resolve().parent.parent / "webapp"
@@ -213,6 +216,18 @@ def create_app(config: Config) -> web.Application:
         app.router.add_get("/app/index.html", _serve_webapp)
         if webapp_install.is_file():
             app.router.add_get("/app/install.html", _serve_webapp_install)
+
+        for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest"):
+            static_path = webapp_dir / static_name
+            if static_path.is_file():
+
+                async def _serve_webapp_static(
+                    _request: web.Request, path: Path = static_path
+                ) -> web.Response:
+                    return web.FileResponse(path)
+
+                app.router.add_get(f"/app/{static_name}", _serve_webapp_static)
+
         logger.info("Webapp: %s", webapp_index)
 
     return app

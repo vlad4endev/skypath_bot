@@ -50,6 +50,9 @@ class User(Base):
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
     referrer_id: Mapped[int | None] = mapped_column(BigInteger)
     is_marketing_lead: Mapped[bool] = mapped_column(Boolean, default=False)
+    web_email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(String(128))
+    web_registered_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -60,6 +63,10 @@ class User(Base):
     def full_name(self) -> str:
         parts = [self.first_name or "", self.last_name or ""]
         return " ".join(p for p in parts if p).strip() or f"User {self.telegram_id}"
+
+    @property
+    def web_registered(self) -> bool:
+        return bool(self.password_hash and self.web_email)
 
 
 class Subscription(Base):

@@ -113,6 +113,9 @@ export interface UserRow {
   language_code: string | null;
   is_banned: boolean;
   referrer_id: number | null;
+  web_email?: string | null;
+  web_registered?: boolean;
+  web_registered_at?: string | null;
   created_at: string | null;
   last_seen: string | null;
   subscription?: SubscriptionSummary;

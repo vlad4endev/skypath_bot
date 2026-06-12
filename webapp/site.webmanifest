@@ -1,0 +1,21 @@
+{
+  "name": "SkyPath VPN",
+  "short_name": "SkyPath",
+  "icons": [
+    {
+      "src": "/app/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/app/apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "theme_color": "#0a0e1f",
+  "background_color": "#0a0e1f",
+  "display": "standalone"
+}

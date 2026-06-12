@@ -56,6 +56,9 @@ def _user_json(u: User, subscription: dict[str, Any] | None = None) -> dict[str,
         "language_code": u.language_code,
         "is_banned": u.is_banned,
         "referrer_id": u.referrer_id,
+        "web_email": u.web_email,
+        "web_registered": u.web_registered,
+        "web_registered_at": _dt(u.web_registered_at),
         "created_at": _dt(u.created_at),
         "last_seen": _dt(u.last_seen),
     }
@@ -1200,6 +1203,19 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         assets_dir = admin_dist / "assets"
         if assets_dir.is_dir():
             app.router.add_static("/admin/assets", assets_dir, show_index=False)
+
+        for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest"):
+            static_path = admin_dist / static_name
+            if not static_path.is_file():
+                static_path = admin_dir / "public" / static_name
+            if static_path.is_file():
+
+                async def _serve_admin_static(
+                    _request: web.Request, path: Path = static_path
+                ) -> web.Response:
+                    return web.FileResponse(path)
+
+                app.router.add_get(f"/admin/{static_name}", _serve_admin_static)
 
         async def _redirect_admin(_request: web.Request) -> web.Response:
             raise web.HTTPFound("/admin/")

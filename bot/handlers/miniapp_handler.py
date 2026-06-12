@@ -10,6 +10,12 @@ from bot.services.discount_service import calculate_discount, preview_discounts_
 from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
 from bot.services.payment_processor import process_manual_check
 from bot.services.subscription_url import resolve_subscription_url
+from bot.services.user_auth import (
+    hash_user_password,
+    normalize_email,
+    validate_email,
+    validate_password,
+)
 from bot.services.vpn_provision import ensure_subscription_link
 from bot.services.xui_client import XUIClient
 from database.engine import async_session
@@ -194,10 +200,13 @@ async def get_dashboard(request: web.Request) -> web.Response:
             "username": user.username if user else None,
             "member_since": user.created_at.isoformat() if user else None,
             "referrals_count": referrals,
+            "web_email": user.web_email if user and user.web_registered else None,
         } if user else None,
         "has_subscription": has_subscription,
         "is_new_user": is_new_user,
         "is_new_vpn_user": is_new_vpn_user,
+        "needs_registration": bool(user and not user.web_registered),
+        "web_registered": bool(user and user.web_registered),
         "subscription": subscription_data,
         "plans": _serialize_plans() if not has_subscription else None,
     })
@@ -373,6 +382,96 @@ async def provision_vpn(request: web.Request) -> web.Response:
     except Exception as e:
         logger.error("Provision VPN error: %s", e)
         return web.json_response({"error": "provision_failed", "message": str(e)}, status=500)
+
+
+async def register_web_account(request: web.Request) -> web.Response:
+    """Первичная регистрация email + пароль для будущего входа в веб-версию."""
+    try:
+        data = await request.json()
+        telegram_id = int(data.get("telegram_id", 0))
+        email = (data.get("email") or "").strip()
+        password = data.get("password") or ""
+        password_confirm = data.get("password_confirm") or password
+
+        if telegram_id <= 0:
+            return web.json_response({"error": "telegram_id required"}, status=400)
+        if not validate_email(email):
+            return web.json_response(
+                {"error": "invalid_email", "message": "Введите корректный email"},
+                status=400,
+            )
+
+        pwd_error = validate_password(password)
+        if pwd_error:
+            return web.json_response(
+                {"error": "weak_password", "message": pwd_error},
+                status=400,
+            )
+        if password != password_confirm:
+            return web.json_response(
+                {"error": "password_mismatch", "message": "Пароли не совпадают"},
+                status=400,
+            )
+
+        async with async_session() as session:
+            user_repo = UserRepo(session)
+            user, _ = await user_repo.get_or_create(
+                telegram_id=telegram_id,
+                username=data.get("username") or None,
+                first_name=data.get("first_name") or None,
+                last_name=data.get("last_name") or None,
+            )
+
+            if user.is_banned:
+                return web.json_response(
+                    {"error": "banned", "message": "Аккаунт заблокирован"},
+                    status=403,
+                )
+
+            existing_email = await user_repo.get_by_web_email(normalize_email(email))
+            if existing_email and existing_email.id != user.id:
+                return web.json_response(
+                    {"error": "email_taken", "message": "Этот email уже используется"},
+                    status=409,
+                )
+
+            if user.web_registered:
+                return web.json_response(
+                    {
+                        "error": "already_registered",
+                        "message": "Регистрация уже выполнена",
+                        "web_email": user.web_email,
+                    },
+                    status=409,
+                )
+
+            password_hash = hash_user_password(password, config.WEB_PASSWORD_PEPPER)
+            user = await user_repo.register_web_credentials(
+                user,
+                email=email,
+                password_hash=password_hash,
+            )
+
+        return web.json_response({
+            "ok": True,
+            "web_email": user.web_email,
+            "message": "Регистрация завершена",
+        })
+    except ValueError as e:
+        if str(e) == "email_taken":
+            return web.json_response(
+                {"error": "email_taken", "message": "Этот email уже используется"},
+                status=409,
+            )
+        if str(e) == "already_registered":
+            return web.json_response(
+                {"error": "already_registered", "message": "Регистрация уже выполнена"},
+                status=409,
+            )
+        return web.json_response({"error": str(e)}, status=400)
+    except Exception as e:
+        logger.error("Register web account error: %s", e)
+        return web.json_response({"error": "registration_failed"}, status=500)
 
 
 async def get_payment_status(request: web.Request) -> web.Response:

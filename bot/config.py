@@ -90,6 +90,8 @@ class Config:
     # Web admin panel (SHA256 hash of password, see scripts/gen_admin_password.py)
     ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
     ADMIN_PASSWORD_SALT: str = os.getenv("ADMIN_PASSWORD_SALT", "")
+    # Pepper for user web passwords (PBKDF2); override in production
+    WEB_PASSWORD_PEPPER: str = os.getenv("WEB_PASSWORD_PEPPER", "")
 
     def __post_init__(self):
         self.BOT_MODE = self.BOT_MODE.strip().lower()
@@ -101,6 +103,8 @@ class Config:
         ]
         if not self.ADMIN_PASSWORD_SALT:
             self.ADMIN_PASSWORD_SALT = self.WEBHOOK_SECRET[:32] or "skypath-admin-salt"
+        if not self.WEB_PASSWORD_PEPPER:
+            self.WEB_PASSWORD_PEPPER = self.WEBHOOK_SECRET or "skypath-web-pepper"
         self.XUI_INBOUND_IDS = {
             "🇷🇺 Россия": int(os.getenv("INBOUND_RU", "1")),
             "🇺🇸 США": int(os.getenv("INBOUND_US", "19")),

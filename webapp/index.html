@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0a0e1f" />
+  <link rel="icon" href="/app/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/app/apple-touch-icon.png" />
+  <link rel="manifest" href="/app/site.webmanifest" />
   <title>VPN</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -654,6 +658,57 @@
 
     .pay-wait-title { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
     .pay-wait-sub { font-size: 13px; color: var(--muted); line-height: 1.55; }
+
+    /* Registration */
+    .register-overlay {
+      position: fixed; inset: 0; z-index: 400;
+      background: rgba(7, 10, 20, 0.96);
+      backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .register-overlay.hidden { display: none !important; }
+    .register-card {
+      width: 100%; max-width: 400px;
+      background: linear-gradient(165deg, rgba(138,156,254,0.12), rgba(10,14,31,0.98));
+      border: 1px solid rgba(138, 156, 254, 0.3);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    }
+    .register-title { font-size: 22px; font-weight: 800; margin-bottom: 8px; text-align: center; }
+    .register-sub {
+      font-size: 13px; color: var(--muted); line-height: 1.55;
+      margin-bottom: 20px; text-align: center;
+    }
+    .register-field { margin-bottom: 14px; }
+    .register-field span {
+      display: block; font-size: 12px; font-weight: 600;
+      color: var(--muted); margin-bottom: 6px;
+    }
+    .register-field input {
+      width: 100%; padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      font-family: inherit; font-size: 15px;
+    }
+    .register-field input:focus {
+      outline: none;
+      border-color: rgba(138, 156, 254, 0.45);
+      box-shadow: 0 0 0 3px rgba(138, 156, 254, 0.12);
+    }
+    .register-error {
+      font-size: 13px; color: var(--danger);
+      margin-bottom: 12px; line-height: 1.45;
+      text-align: center;
+    }
+    .register-hint {
+      font-size: 12px; color: var(--muted);
+      margin-top: 12px; line-height: 1.5; text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -787,6 +842,32 @@
     <div class="loader" style="padding:12px 0 20px"><div class="spinner"></div></div>
     <div class="pay-wait-title">Проверяем оплату…</div>
     <p class="pay-wait-sub">Обычно это занимает несколько секунд. Не закрывай приложение.</p>
+  </div>
+</div>
+
+<div class="register-overlay hidden" id="registerOverlay">
+  <div class="register-card">
+    <div class="register-title">Регистрация</div>
+    <p class="register-sub">
+      Укажите email и пароль — они понадобятся для входа в веб-версию личного кабинета.
+    </p>
+    <form id="registerForm" onsubmit="submitRegistration(event)">
+      <label class="register-field">
+        <span>Email</span>
+        <input id="registerEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required />
+      </label>
+      <label class="register-field">
+        <span>Пароль</span>
+        <input id="registerPassword" type="password" autocomplete="new-password" placeholder="Минимум 8 символов" minlength="8" required />
+      </label>
+      <label class="register-field">
+        <span>Повторите пароль</span>
+        <input id="registerPasswordConfirm" type="password" autocomplete="new-password" placeholder="Ещё раз" minlength="8" required />
+      </label>
+      <p class="register-error hidden" id="registerError"></p>
+      <button type="submit" class="btn btn-primary" id="registerBtn">Создать аккаунт</button>
+    </form>
+    <p class="register-hint">После регистрации вы сможете пользоваться приложением и тарифами как обычно.</p>
   </div>
 </div>
 
@@ -1609,6 +1690,80 @@
     setTimeout(() => t.classList.remove('show'), 2800);
   }
 
+  function showRegistrationOverlay(show = true) {
+    document.getElementById('registerOverlay')?.classList.toggle('hidden', !show);
+    document.getElementById('bottomNav')?.classList.toggle('hidden', show);
+  }
+
+  function setRegisterError(message) {
+    const el = document.getElementById('registerError');
+    if (!el) return;
+    if (!message) {
+      el.textContent = '';
+      el.classList.add('hidden');
+      return;
+    }
+    el.textContent = message;
+    el.classList.remove('hidden');
+  }
+
+  async function submitRegistration(event) {
+    event.preventDefault();
+    if (!dashboard?.needs_registration) return;
+
+    const email = document.getElementById('registerEmail')?.value?.trim() || '';
+    const password = document.getElementById('registerPassword')?.value || '';
+    const passwordConfirm = document.getElementById('registerPasswordConfirm')?.value || '';
+    const btn = document.getElementById('registerBtn');
+
+    setRegisterError('');
+    if (password.length < 8) {
+      setRegisterError('Пароль должен быть не короче 8 символов');
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setRegisterError('Пароли не совпадают');
+      return;
+    }
+
+    const user = tg?.initDataUnsafe?.user;
+    btn.disabled = true;
+    tg?.HapticFeedback?.impactOccurred('medium');
+
+    try {
+      const r = await fetch(`${API}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegram_id: Number(telegramId),
+          email,
+          password,
+          password_confirm: passwordConfirm,
+          username: user?.username,
+          first_name: user?.first_name,
+          last_name: user?.last_name,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(data.message || data.error || 'Не удалось зарегистрироваться');
+      }
+
+      dashboard.needs_registration = false;
+      dashboard.web_registered = true;
+      if (dashboard.user) dashboard.user.web_email = data.web_email || email;
+      showRegistrationOverlay(false);
+      showToast('✅ Аккаунт создан');
+      tg?.HapticFeedback?.notificationOccurred('success');
+      await refresh();
+    } catch (e) {
+      setRegisterError(e.message || 'Ошибка регистрации');
+      tg?.HapticFeedback?.notificationOccurred('error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async function refresh() {
     await loadDashboard();
     renderHome();
@@ -1619,6 +1774,12 @@
   async function init() {
     setAvatar();
     await refresh();
+
+    if (dashboard?.needs_registration) {
+      showRegistrationOverlay(true);
+      return;
+    }
+
     const paymentHandled = await handlePaymentReturn();
     if (paymentHandled) return;
 
