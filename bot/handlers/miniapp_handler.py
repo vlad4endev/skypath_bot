@@ -6,7 +6,9 @@ from aiohttp import web
 from aiogram import Router
 
 from bot.config import Config, PLANS, MONTHS_LABELS
-from bot.services.miniapp_purchase import process_miniapp_purchase
+from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
+from bot.services.subscription_url import resolve_subscription_url
+from bot.services.vpn_provision import ensure_subscription_link
 from bot.services.xui_client import XUIClient
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo
@@ -23,6 +25,7 @@ xui = XUIClient(
     password=config.XUI_PASSWORD,
     api_token=config.XUI_API_TOKEN,
     sub_path=config.XUI_SUB_PATH,
+    sub_base_url=config.XUI_SUB_BASE_URL,
 )
 
 ACTIVE_STATUSES = {SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL}
@@ -103,6 +106,7 @@ async def get_user_info(request: web.Request) -> web.Response:
 
 def _serialize_subscription(sub, *, traffic: dict | None = None, plan_info: dict | None = None) -> dict:
     is_live = _is_subscription_live(sub)
+    subscription_url = resolve_subscription_url(sub, config)
     return {
         "id": sub.id,
         "plan": sub.plan.value if sub.plan else None,
@@ -115,8 +119,10 @@ def _serialize_subscription(sub, *, traffic: dict | None = None, plan_info: dict
         "limit_ip": sub.limit_ip,
         "months_paid": sub.months_paid,
         "traffic_gb": sub.traffic_gb,
-        "vpn_key": sub.vpn_key,
+        "vpn_key": subscription_url,
+        "subscription_url": subscription_url,
         "vpn_sub_id": sub.vpn_sub_id,
+        "has_vpn_client": bool(sub.vpn_sub_id or sub.vpn_uuid or sub.vpn_email),
         "traffic": traffic,
         "plan_info": plan_info,
     }
@@ -151,16 +157,18 @@ async def get_dashboard(request: web.Request) -> web.Response:
     async with async_session() as session:
         user_repo = UserRepo(session)
         sub_repo = SubscriptionRepo(session)
-        user, _ = await user_repo.get_or_create(
+        user, is_new_user = await user_repo.get_or_create(
             telegram_id=telegram_id,
             username=request.query.get("username") or None,
             first_name=request.query.get("first_name") or None,
             last_name=request.query.get("last_name") or None,
         )
+        all_subs = await sub_repo.get_all_for_user(telegram_id)
         sub = await sub_repo.get_active(telegram_id)
         referrals = await user_repo.count_referrals(telegram_id)
 
     has_subscription = sub is not None and _is_subscription_live(sub)
+    is_new_vpn_user = _is_new_vpn_user(all_subs)
 
     traffic = None
     servers = await xui.get_servers_status(config.XUI_INBOUND_IDS)
@@ -188,6 +196,8 @@ async def get_dashboard(request: web.Request) -> web.Response:
             "referrals_count": referrals,
         } if user else None,
         "has_subscription": has_subscription,
+        "is_new_user": is_new_user,
+        "is_new_vpn_user": is_new_vpn_user,
         "subscription": subscription_data,
         "servers": servers,
         "plans": _serialize_plans() if not has_subscription else None,
@@ -206,6 +216,7 @@ async def create_payment(request: web.Request) -> web.Response:
         months = int(data.get("months", 1))
         price = int(data.get("price", 250))
 
+        bot = request.app.get("bot")
         result = await process_miniapp_purchase(
             telegram_id=telegram_id,
             plan=plan,
@@ -214,6 +225,7 @@ async def create_payment(request: web.Request) -> web.Response:
             username=data.get("username"),
             first_name=data.get("first_name"),
             last_name=data.get("last_name"),
+            bot=bot,
         )
 
         if result.get("error"):
@@ -225,3 +237,66 @@ async def create_payment(request: web.Request) -> web.Response:
     except Exception as e:
         logger.error("Create payment error: %s", e)
         return web.json_response({"error": str(e)}, status=500)
+
+
+async def provision_vpn(request: web.Request) -> web.Response:
+    """Создать VPN-клиент или вернуть subscription link для активной подписки без ключа."""
+    try:
+        data = await request.json()
+        telegram_id = int(data.get("telegram_id", 0))
+        if telegram_id <= 0:
+            return web.json_response({"error": "telegram_id required"}, status=400)
+
+        async with async_session() as session:
+            user_repo = UserRepo(session)
+            sub_repo = SubscriptionRepo(session)
+            user, _ = await user_repo.get_or_create(
+                telegram_id=telegram_id,
+                username=data.get("username") or None,
+                first_name=data.get("first_name") or None,
+                last_name=data.get("last_name") or None,
+            )
+            sub = await sub_repo.get_active(telegram_id)
+
+        if not sub or not _is_subscription_live(sub):
+            return web.json_response(
+                {"error": "no_subscription", "message": "Нет активной подписки"},
+                status=404,
+            )
+
+        existing_url = resolve_subscription_url(sub, config)
+        if existing_url:
+            return web.json_response({
+                "subscription_url": existing_url,
+                "vpn_key": existing_url,
+                "message": "Ссылка подписки готова",
+            })
+
+        plan_key = sub.plan.value if sub.plan else "BASIC"
+        plan_cfg = PLANS.get(plan_key, PLANS["BASIC"])
+        is_trial = sub.plan == PlanType.FREE or sub.status == SubscriptionStatus.FREE_TRIAL
+        trial_days = plan_cfg.get("days", 3) if is_trial else 0
+        months = sub.months_paid or 1
+
+        subscription_url = await ensure_subscription_link(
+            telegram_id=telegram_id,
+            first_name=user.first_name or data.get("first_name") or "User",
+            last_name=user.last_name or data.get("last_name") or "",
+            sub_id_db=sub.id,
+            months=0 if is_trial else months,
+            days=trial_days if is_trial else 0,
+        )
+        if not subscription_url:
+            return web.json_response(
+                {"error": "provision_failed", "message": "Не удалось создать VPN-ключ"},
+                status=500,
+            )
+
+        return web.json_response({
+            "subscription_url": subscription_url,
+            "vpn_key": subscription_url,
+            "message": "VPN-ключ создан",
+        })
+    except Exception as e:
+        logger.error("Provision VPN error: %s", e)
+        return web.json_response({"error": "provision_failed", "message": str(e)}, status=500)

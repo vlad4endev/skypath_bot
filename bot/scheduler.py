@@ -24,6 +24,7 @@ xui = XUIClient(
     password=config.XUI_PASSWORD,
     api_token=config.XUI_API_TOKEN,
     sub_path=config.XUI_SUB_PATH,
+    sub_base_url=config.XUI_SUB_BASE_URL,
 )
 
 

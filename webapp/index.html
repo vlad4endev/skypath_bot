@@ -464,6 +464,27 @@
     .toast.error { background: rgba(255,92,122,0.15); border-color: rgba(255,92,122,0.35); color: var(--danger); }
 
     .hidden { display: none !important; }
+
+    /* Success overlay */
+    .overlay {
+      position: fixed; inset: 0; z-index: 300;
+      background: rgba(7, 10, 20, 0.88);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: flex-end; justify-content: center;
+      padding: 20px 20px calc(var(--nav-h) + 20px);
+      animation: fadeIn 0.2s ease;
+    }
+    .overlay.hidden { display: none !important; }
+    .success-card {
+      width: 100%; max-width: 400px;
+      background: linear-gradient(165deg, rgba(138,156,254,0.14), rgba(10,14,31,0.95));
+      border: 1px solid rgba(138, 156, 254, 0.35);
+      border-radius: var(--radius);
+      padding: 22px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    }
+    .success-title { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+    .success-sub { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 16px; }
   </style>
 </head>
 <body>
@@ -520,7 +541,10 @@
     <div class="card">
       <div class="card-title">Как подключиться</div>
       <div class="info-row"><span class="info-key"><span class="brand-pill green" style="font-size:10px;padding:3px 10px">Android</span></span><span class="info-val" style="color:var(--accent)">v2rayNG</span></div>
-      <div class="info-row"><span class="info-key">🍎 iPhone</span><span class="info-val" style="color:var(--accent)">Happ / V2Box</span></div>
+      <div class="info-row"><span class="info-key">🍎 iPhone</span><span class="info-val" style="color:var(--accent)">Happ</span></div>
+      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-top:12px">
+        В Happ используй <b>ссылку подписки</b> из вкладки «Ключи» (не vless://). Вставь её в «Добавить подписку».
+      </p>
       <div class="info-row"><span class="info-key">💻 Windows</span><span class="info-val" style="color:var(--accent)">Nekoray</span></div>
       <div class="info-row"><span class="info-key">🍎 macOS</span><span class="info-val" style="color:var(--accent)">V2Box</span></div>
     </div>
@@ -541,6 +565,20 @@
     <span class="nav-icon">💬</span><span>Помощь</span>
   </button>
 </nav>
+
+<div class="overlay hidden" id="successOverlay" onclick="if(event.target===this)closeSuccessOverlay()">
+  <div class="success-card" onclick="event.stopPropagation()">
+    <div class="success-title">🎉 VPN готов!</div>
+    <p class="success-sub" id="successMessage">Скопируй ссылку подписки и добавь в Happ или v2rayNG.</p>
+    <div class="key-block">
+      <div class="key-label">🔗 Ссылка подписки</div>
+      <div class="key-value" id="successLink"></div>
+      <button class="copy-btn" onclick="copySuccessLink()">📋 Скопировать ссылку</button>
+    </div>
+    <button class="btn btn-primary" style="margin-top:14px" onclick="closeSuccessOverlay(); showTab('keys')">Перейти к ключам</button>
+    <button class="btn btn-ghost" onclick="closeSuccessOverlay()">Закрыть</button>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -642,6 +680,10 @@
 
   function isActiveSub(sub) {
     return sub && ACTIVE_STATUSES.includes(sub.status);
+  }
+
+  function getSubscriptionLink(sub) {
+    return sub?.subscription_url || sub?.vpn_key || null;
   }
 
   function statusBadgeClass(status) {
@@ -791,6 +833,17 @@
         ${renderServers(servers)}
       </div>` : ''}
 
+      ${getSubscriptionLink(sub) ? `
+      <div class="card">
+        <div class="card-title">Подключение в Happ</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:10px">
+          Скопируй ссылку подписки и вставь в Happ → «Добавить подписку».
+        </p>
+        <div class="key-value" style="margin-bottom:10px;word-break:break-all">${getSubscriptionLink(sub)}</div>
+        <button class="copy-btn" onclick="copySubscriptionLink()">📋 Скопировать ссылку</button>
+      </div>` : `
+      <button class="btn btn-primary" onclick="provisionVpn()">🔑 Получить ссылку подписки</button>`}
+
       <button class="btn btn-primary" onclick="showTab('keys')">🔑 Мои ключи</button>
       <button class="btn btn-ghost" onclick="showTab('plans')">🔄 Продлить / сменить тариф</button>
     `;
@@ -832,8 +885,18 @@
   function renderKeys() {
     const el = document.getElementById('keysContent');
     const sub = dashboard?.subscription;
+    const link = getSubscriptionLink(sub);
 
-    if (!sub?.vpn_key) {
+    if (!link) {
+      if (dashboard?.has_subscription) {
+        el.innerHTML = `
+          <div class="empty">
+            <div class="icon">🔑</div>
+            <p>Подписка активна, но ссылка ещё не создана. Нажми кнопку ниже — ключ появится через несколько секунд.</p>
+          </div>
+          <button class="btn btn-primary" id="provisionBtn" onclick="provisionVpn()">🔑 Получить ссылку подписки</button>`;
+        return;
+      }
       el.innerHTML = `
         <div class="empty">
           <div class="icon">🔑</div>
@@ -845,21 +908,23 @@
 
     el.innerHTML = `
       <div class="card card-glow">
-        <div class="card-title">Активный ключ</div>
+        <div class="card-title">Ссылка подписки</div>
         <div class="info-row"><span class="info-key">Тариф</span><span class="info-val">${sub.plan_name || sub.plan}</span></div>
         <div class="info-row"><span class="info-key">Статус</span><span class="info-val">${sub.status}</span></div>
         <div class="info-row"><span class="info-key">Действует до</span><span class="info-val">${formatDate(sub.expires_at)}</span></div>
         <div class="info-row"><span class="info-key">Устройств</span><span class="info-val">${sub.limit_ip || 1}</span></div>
         <div class="key-block">
-          <div class="key-label">🔗 Ссылка для подключения</div>
-          <div class="key-value" id="vpnKey">${sub.vpn_key}</div>
-          <button class="copy-btn" onclick="copyKey()">📋 Скопировать</button>
+          <div class="key-label">🔗 Для Happ / v2rayNG</div>
+          <div class="key-value" id="vpnKey">${link}</div>
+          <button class="copy-btn" onclick="copyKey()">📋 Скопировать ссылку</button>
         </div>
       </div>
       <div class="card">
-        <div class="card-title">Быстрая настройка</div>
+        <div class="card-title">Быстрая настройка Happ</div>
         <p style="font-size:13px;color:var(--muted);line-height:1.6">
-          Скопируй ссылку → открой VPN-приложение → вставь → подключись. Подробные инструкции — во вкладке «Помощь».
+          1. Скопируй ссылку подписки<br>
+          2. Открой Happ → «+» → «Добавить подписку»<br>
+          3. Вставь ссылку и обнови список серверов
         </p>
       </div>`;
   }
@@ -872,6 +937,10 @@
     if (dashboard?.has_subscription) {
       html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">
         Продли подписку или выбери новый тариф — ключ обновится автоматически.
+      </p>`;
+    } else if (dashboard?.is_new_vpn_user) {
+      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">
+        Начни с пробного тарифа — сразу получишь ссылку подписки для Happ.
       </p>`;
     }
 
@@ -979,10 +1048,21 @@
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.message || data.error || 'Не удалось оформить заказ');
 
-      if (data.free_trial) {
-        showToast('✅ ' + (data.message || 'Пробный период активирован'));
+      if (data.provisioned && data.subscription_url) {
         await refresh();
-        showTab('keys');
+        showSubscriptionSuccess(data.subscription_url, data.message);
+        tg?.HapticFeedback?.notificationOccurred('success');
+        return;
+      }
+
+      if (data.free_trial) {
+        await refresh();
+        if (data.subscription_url) {
+          showSubscriptionSuccess(data.subscription_url, data.message);
+        } else {
+          showToast('✅ ' + (data.message || 'Пробный период активирован'));
+          showTab('keys');
+        }
         return;
       }
 
@@ -1001,16 +1081,52 @@
     }
   }
 
-  function copyKey() {
-    const key = document.getElementById('vpnKey')?.textContent;
-    if (!key) return;
+  function copyText(text) {
+    if (!text) return;
     const done = () => { showToast('✅ Скопировано!'); tg?.HapticFeedback?.notificationOccurred('success'); };
-    navigator.clipboard?.writeText(key).then(done).catch(() => {
+    navigator.clipboard?.writeText(text).then(done).catch(() => {
       const ta = document.createElement('textarea');
-      ta.value = key; document.body.appendChild(ta);
+      ta.value = text; document.body.appendChild(ta);
       ta.select(); document.execCommand('copy'); ta.remove();
       done();
     });
+  }
+
+  function copyKey() {
+    copyText(document.getElementById('vpnKey')?.textContent);
+  }
+
+  function copySubscriptionLink() {
+    copyText(getSubscriptionLink(dashboard?.subscription));
+  }
+
+  async function provisionVpn() {
+    const user = tg?.initDataUnsafe?.user;
+    const btn = document.getElementById('provisionBtn');
+    if (btn) btn.disabled = true;
+    tg?.HapticFeedback?.impactOccurred('medium');
+
+    try {
+      const r = await fetch(`${API}/provision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegram_id: Number(telegramId),
+          username: user?.username,
+          first_name: user?.first_name,
+          last_name: user?.last_name,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.message || data.error || 'Не удалось создать ключ');
+      showToast('✅ ' + (data.message || 'Ссылка готова'));
+      await refresh();
+      showTab('keys');
+    } catch (e) {
+      showToast('❌ ' + (e.message || 'Ошибка'), true);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function openSupport() {
@@ -1030,6 +1146,24 @@
       renderPlans();
     }
     tg?.HapticFeedback?.selectionChanged();
+  }
+
+  let lastSuccessLink = '';
+
+  function showSubscriptionSuccess(url, message) {
+    lastSuccessLink = url || '';
+    document.getElementById('successLink').textContent = url || '';
+    document.getElementById('successMessage').textContent =
+      message || 'Скопируй ссылку подписки и добавь в Happ или v2rayNG.';
+    document.getElementById('successOverlay').classList.remove('hidden');
+  }
+
+  function closeSuccessOverlay() {
+    document.getElementById('successOverlay').classList.add('hidden');
+  }
+
+  function copySuccessLink() {
+    copyText(lastSuccessLink || document.getElementById('successLink')?.textContent);
   }
 
   function showToast(msg, isError = false) {

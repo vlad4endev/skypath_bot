@@ -149,6 +149,7 @@ def create_app(config: Config) -> web.Application:
     app.router.add_get("/api/subscription/{telegram_id}", miniapp_handler.get_subscription)
     app.router.add_get("/api/dashboard/{telegram_id}", miniapp_handler.get_dashboard)
     app.router.add_post("/api/pay", miniapp_handler.create_payment)
+    app.router.add_post("/api/provision", miniapp_handler.provision_vpn)
     app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
 
     setup_admin_routes(app, config)

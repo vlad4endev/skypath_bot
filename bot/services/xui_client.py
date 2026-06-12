@@ -29,6 +29,7 @@ class XUIClient:
         password: str,
         api_token: str = "",
         sub_path: str = "/sub/",
+        sub_base_url: str = "",
     ):
         self.host = host.rstrip("/")
         self.prefix = url_prefix.rstrip("/")
@@ -36,6 +37,7 @@ class XUIClient:
         self.password = password
         self.api_token = api_token.strip()
         self.sub_path = sub_path if sub_path.endswith("/") else f"{sub_path}/"
+        self.sub_base_url = sub_base_url.strip().rstrip("/")
         self._cookie: Optional[str] = None
         self._cookie_expires: Optional[datetime] = None
         self._inbound_cache: dict[int, dict[str, Any]] | None = None
@@ -613,7 +615,9 @@ class XUIClient:
         )
 
     def build_sub_url(self, sub_id: str) -> str:
-        return f"{self.host}{self.prefix}{self.sub_path}{sub_id}"
+        if self.sub_base_url:
+            return f"{self.sub_base_url}/{sub_id}"
+        return f"{self.host}{self.sub_path}{sub_id}"
 
     async def add_to_all_inbounds(
         self,

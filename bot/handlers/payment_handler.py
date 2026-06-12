@@ -16,6 +16,7 @@ from database.repository import UserRepo, SubscriptionRepo, PaymentRepo
 from database.models import PlanType, SubscriptionStatus
 from bot.services.payment_processor import create_paid_order, process_manual_check, process_webhook
 from bot.services.xui_client import XUIClient
+from bot.services.vpn_provision import provision_vpn_for_subscription
 from bot.handlers.referral_handler import process_referral_bonus
 
 router = Router()
@@ -29,6 +30,7 @@ xui = XUIClient(
     password=config.XUI_PASSWORD,
     api_token=config.XUI_API_TOKEN,
     sub_path=config.XUI_SUB_PATH,
+    sub_base_url=config.XUI_SUB_BASE_URL,
 )
 
 
@@ -300,61 +302,37 @@ async def _create_vpn_and_notify(
     payment_db_id: int | None = None,
 ):
     """Создать VPN клиента и отправить ключ пользователю"""
-    plan_config = None
-    inbound_id = list(config.XUI_INBOUND_IDS.values())[0]  # По умолчанию первый сервер
+    is_trial = days > 0
 
     async with async_session() as session:
         sub_repo = SubscriptionRepo(session)
         sub = await sub_repo.get_by_id(sub_id_db)
-        if sub:
-            plan_key = sub.plan.value if sub.plan else "BASIC"
-            plan_config = PLANS.get(plan_key, PLANS["BASIC"])
-
-    sub = None
-    is_trial = days > 0
-    if is_trial:
-        free_cfg = PLANS["FREE"]
-        limit_ip = free_cfg["limit_ip"]
-        traffic_gb = free_cfg["traffic_gb"]
-        trial_days = free_cfg["days"]
-        xui_months = 0
-    else:
-        limit_ip = plan_config["limit_ip"] if plan_config else 3
-        traffic_gb = plan_config.get("traffic_gb", 0) if plan_config else 0
-        trial_days = 0
-        xui_months = max(months, 1)
 
     try:
-        vpn_data = await xui.add_client(
-            inbound_id=inbound_id,
+        provision = await provision_vpn_for_subscription(
+            telegram_id=telegram_id,
             first_name=first_name,
             last_name=last_name,
-            telegram_id=telegram_id,
-            months=xui_months,
-            limit_ip=limit_ip,
-            traffic_gb=traffic_gb,
-            days=trial_days,
+            sub_id_db=sub_id_db,
+            months=months,
+            days=days,
         )
+        sub_url = provision.subscription_url
 
-        # Строим ключ (vless sub-link)
-        sub_url = xui.build_sub_url(vpn_data["sub_id"])
-
-        # Сохраняем в БД
         async with async_session() as session:
             sub_repo = SubscriptionRepo(session)
             sub = await sub_repo.get_by_id(sub_id_db)
-            if sub:
-                await sub_repo.activate(
-                    sub=sub,
-                    months=months if months > 0 else 1,
-                    vpn_uuid=vpn_data["uuid"],
-                    vpn_email=vpn_data["email"],
-                    vpn_sub_id=vpn_data["sub_id"],
-                    vpn_key=sub_url,
-                    inbound_id=inbound_id,
-                    days=trial_days or days,
-                    traffic_gb=traffic_gb if is_trial else 0,
-                )
+
+        trial_days = days if is_trial else 0
+        if is_trial:
+            free_cfg = PLANS["FREE"]
+            limit_ip = free_cfg["limit_ip"]
+            traffic_gb = free_cfg["traffic_gb"]
+        else:
+            plan_key = sub.plan.value if sub and sub.plan else "BASIC"
+            plan_config = PLANS.get(plan_key, PLANS["BASIC"])
+            limit_ip = plan_config["limit_ip"]
+            traffic_gb = plan_config.get("traffic_gb", 0)
 
         if trial_days or days > 0:
             period_text = f"{trial_days or days} дней"
@@ -417,7 +395,7 @@ async def _create_vpn_and_notify(
         )
 
         await bot.send_message(telegram_id, text, reply_markup=builder.as_markup())
-        logger.info("VPN issued to %s: %s", telegram_id, vpn_data["email"])
+        logger.info("VPN issued to %s: %s", telegram_id, provision.vpn_email)
 
         if payment_db_id:
             async with async_session() as session:
@@ -427,7 +405,7 @@ async def _create_vpn_and_notify(
                     await pay_repo.mark_fulfilled(payment)
 
     except Exception as e:
-        logger.exception("VPN creation error for %s (inbound=%s): %s", telegram_id, inbound_id, e)
+        logger.exception("VPN creation error for %s: %s", telegram_id, e)
         await bot.send_message(
             telegram_id,
             "⚠️ <b>Ошибка создания VPN ключа.</b>\n\n"

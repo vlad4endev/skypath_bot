@@ -64,6 +64,9 @@ class Config:
     XUI_PASSWORD: str = os.getenv("XUI_PASSWORD", "password")
     XUI_API_TOKEN: str = os.getenv("XUI_API_TOKEN", "")
     XUI_SUB_PATH: str = os.getenv("XUI_SUB_PATH", "/sub/")
+    # База subscription URL (порт/path из 3X-UI → Settings → Subscription).
+    # Пример: https://178.208.87.245:2096/vk098  (без admin-префикса KolbUBTWA0)
+    XUI_SUB_BASE_URL: str = os.getenv("XUI_SUB_BASE_URL", "")
     XUI_INBOUND_IDS: dict = None  # заполняется в __post_init__
 
     # Support
@@ -96,8 +99,15 @@ class Config:
         return self.BOT_MODE == "polling"
 
     def xui_sub_url(self, sub_id: str) -> str:
-        path = self.XUI_SUB_PATH if self.XUI_SUB_PATH.endswith("/") else f"{self.XUI_SUB_PATH}/"
-        return f"{self.XUI_HOST}{self.XUI_URL_PREFIX}{path}{sub_id}"
+        if self.XUI_SUB_BASE_URL.strip():
+            base = self.XUI_SUB_BASE_URL.strip().rstrip("/")
+            return f"{base}/{sub_id}"
+
+        path = self.XUI_SUB_PATH if self.XUI_SUB_PATH.startswith("/") else f"/{self.XUI_SUB_PATH}"
+        if not path.endswith("/"):
+            path = f"{path}/"
+        # Subscription-сервер не использует секретный префикс панели (XUI_URL_PREFIX).
+        return f"{self.XUI_HOST.rstrip('/')}{path}{sub_id}"
 
 
 # Тарифные планы

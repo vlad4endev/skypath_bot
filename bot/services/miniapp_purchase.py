@@ -6,11 +6,21 @@ from typing import Any
 
 from bot.config import Config, PLANS
 from bot.services.payment_processor import create_paid_order
+from bot.services.subscription_url import resolve_subscription_url
+from bot.services.vpn_provision import ensure_subscription_link, provision_vpn_for_subscription
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo
 from database.models import PlanType, SubscriptionStatus
 
 logger = logging.getLogger(__name__)
+config = Config()
+
+
+def _is_new_vpn_user(existing_subs: list) -> bool:
+    """Пользователь ещё не получал VPN (нет подписок с клиентом в панели)."""
+    if not existing_subs:
+        return True
+    return not any(s.vpn_sub_id or s.vpn_uuid for s in existing_subs)
 
 
 async def process_miniapp_purchase(
@@ -29,6 +39,18 @@ async def process_miniapp_purchase(
     if not plan_cfg:
         return {"error": "unknown_plan", "message": "Тариф не найден"}
 
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        sub_repo = SubscriptionRepo(session)
+        db_user, is_new_user = await user_repo.get_or_create(
+            telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
+            last_name=last_name,
+        )
+        existing_subs = await sub_repo.get_all_for_user(telegram_id)
+        is_new_vpn_user = _is_new_vpn_user(existing_subs)
+
     if plan == "FREE" or price == 0:
         return await _issue_free_trial(
             telegram_id=telegram_id,
@@ -36,6 +58,8 @@ async def process_miniapp_purchase(
             first_name=first_name,
             last_name=last_name,
             bot=bot,
+            is_new_user=is_new_user,
+            is_new_vpn_user=is_new_vpn_user,
         )
 
     try:
@@ -58,6 +82,9 @@ async def process_miniapp_purchase(
         "order_id": order.order_id,
         "amount": order.amount,
         "subscription_id": order.subscription_id,
+        "is_new_user": is_new_user,
+        "is_new_vpn_user": is_new_vpn_user,
+        "provisioned": False,
     }
 
 
@@ -68,9 +95,9 @@ async def _issue_free_trial(
     first_name: str | None,
     last_name: str | None,
     bot: Any | None = None,
+    is_new_user: bool = False,
+    is_new_vpn_user: bool = True,
 ) -> dict[str, Any]:
-    from bot.handlers.payment_handler import _create_vpn_and_notify
-
     async with async_session() as session:
         user_repo = UserRepo(session)
         sub_repo = SubscriptionRepo(session)
@@ -89,6 +116,21 @@ async def _issue_free_trial(
                 "message": "Пробный период уже был использован",
             }
 
+        active = await sub_repo.get_active(telegram_id)
+        if active:
+            link = resolve_subscription_url(active, config)
+            if link:
+                return {
+                    "free_trial": False,
+                    "provisioned": True,
+                    "subscription_url": link,
+                    "vpn_key": link,
+                    "expires_at": active.expires_at.isoformat() if active.expires_at else None,
+                    "is_new_user": is_new_user,
+                    "is_new_vpn_user": False,
+                    "message": "Подписка уже активна",
+                }
+
         sub = await sub_repo.create_pending(
             telegram_id=telegram_id,
             user_id=db_user.id,
@@ -97,18 +139,21 @@ async def _issue_free_trial(
         )
         sub_id = sub.id
 
-    notify_bot = bot if bot is not None else _NoopBot(telegram_id)
-    await _create_vpn_and_notify(
-        bot=notify_bot,
-        telegram_id=telegram_id,
-        first_name=first_name or "User",
-        last_name=last_name or "",
-        sub_id_db=sub_id,
-        months=0,
-        days=PLANS["FREE"]["days"],
-        plan_name=PLANS["FREE"]["name"],
-        amount=0,
-    )
+    try:
+        result = await provision_vpn_for_subscription(
+            telegram_id=telegram_id,
+            first_name=first_name or "User",
+            last_name=last_name or "",
+            sub_id_db=sub_id,
+            months=0,
+            days=PLANS["FREE"]["days"],
+        )
+    except Exception as e:
+        logger.exception("Free trial provision failed for %s: %s", telegram_id, e)
+        return {"error": "provision_failed", "message": "Не удалось создать VPN-ключ"}
+
+    if bot is not None:
+        await _notify_trial_activated(bot, telegram_id, result.subscription_url)
 
     async with async_session() as session:
         sub_repo = SubscriptionRepo(session)
@@ -117,22 +162,47 @@ async def _issue_free_trial(
     if not sub or sub.status not in (
         SubscriptionStatus.ACTIVE,
         SubscriptionStatus.FREE_TRIAL,
-    ) or not sub.vpn_key:
-        return {"error": "provision_failed", "message": "Не удалось выдать пробный ключ"}
+    ):
+        return {"error": "provision_failed", "message": "Не удалось активировать подписку"}
 
     return {
         "free_trial": True,
-        "vpn_key": sub.vpn_key,
+        "provisioned": True,
+        "vpn_key": result.subscription_url,
+        "subscription_url": result.subscription_url,
         "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
-        "message": "Пробный период активирован",
+        "is_new_user": is_new_user,
+        "is_new_vpn_user": is_new_vpn_user,
+        "message": "Пробный период активирован — ссылка готова",
     }
 
 
+async def _notify_trial_activated(bot: Any, telegram_id: int, subscription_url: str) -> None:
+    try:
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        from aiogram.types import InlineKeyboardButton
+        from bot.keyboards.webapp import cabinet_button, is_miniapp_available
+
+        text = (
+            "🎉 <b>Пробный VPN готов!</b>\n\n"
+            "🔗 <b>Ссылка подписки:</b>\n"
+            f"<code>{subscription_url}</code>\n\n"
+            "Скопируй и добавь в Happ или v2rayNG."
+        )
+        builder = InlineKeyboardBuilder()
+        if is_miniapp_available():
+            builder.row(cabinet_button("👤 Личный кабинет"))
+        builder.row(InlineKeyboardButton(text="📖 Инструкции", callback_data="instructions"))
+        await bot.send_message(telegram_id, text, reply_markup=builder.as_markup())
+    except Exception as e:
+        logger.warning("Trial notify failed for %s: %s", telegram_id, e)
+
+
 class _NoopBot:
-    """Заглушка: VPN уже создан, сообщение в чат отправит web_app_data-обработчик."""
+    """Заглушка для REST API без дублирования сообщения в чат."""
 
     def __init__(self, telegram_id: int) -> None:
         self._telegram_id = telegram_id
 
     async def send_message(self, chat_id: int, text: str, **kwargs) -> None:
-        logger.debug("Skip duplicate free-trial message for %s", chat_id)
+        logger.debug("Skip bot message for %s (mini-app REST)", chat_id)
