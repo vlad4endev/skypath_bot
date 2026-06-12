@@ -23,9 +23,11 @@ async def main() -> int:
         password=cfg.XUI_PASSWORD,
         api_token=cfg.XUI_API_TOKEN,
         sub_path=cfg.XUI_SUB_PATH,
+        sub_base_url=cfg.XUI_SUB_BASE_URL,
     )
 
     print("Panel:", f"{cfg.XUI_HOST}{cfg.XUI_URL_PREFIX}")
+    print("Sub URL base:", cfg.XUI_SUB_BASE_URL or f"{cfg.XUI_HOST}{cfg.XUI_SUB_PATH}")
     print("API token:", "yes" if cfg.XUI_API_TOKEN else "no (login/password)")
     print("Inbounds config:", cfg.XUI_INBOUND_IDS)
 

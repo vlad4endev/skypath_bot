@@ -64,8 +64,8 @@ class Config:
     XUI_PASSWORD: str = os.getenv("XUI_PASSWORD", "password")
     XUI_API_TOKEN: str = os.getenv("XUI_API_TOKEN", "")
     XUI_SUB_PATH: str = os.getenv("XUI_SUB_PATH", "/sub/")
-    # База subscription URL (порт/path из 3X-UI → Settings → Subscription).
-    # Пример: https://178.208.87.245:2096/vk098  (без admin-префикса KolbUBTWA0)
+    # База subscription URL (обратный прокси из 3X-UI → Settings → Subscription).
+    # Пример: https://sub.skypath.fun:8671/vk098 → ссылка .../vk098/{subId}
     XUI_SUB_BASE_URL: str = os.getenv("XUI_SUB_BASE_URL", "")
     XUI_INBOUND_IDS: dict = None  # заполняется в __post_init__
 

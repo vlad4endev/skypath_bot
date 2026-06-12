@@ -10,7 +10,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import CommandObject
 
 from bot.config import Config
-from bot.keyboards.webapp import cabinet_button, is_miniapp_available
+from bot.keyboards.webapp import cabinet_button, buy_vpn_button, is_miniapp_available
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo
 
@@ -32,12 +32,23 @@ def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     if is_miniapp_available():
-        label = "👤 Личный кабинет" if has_subscription else "🚀 Получить VPN"
-        builder.row(cabinet_button(label))
+        if has_subscription:
+            builder.row(cabinet_button("👤 Личный кабинет"))
+        else:
+            builder.row(
+                cabinet_button("👤 Личный кабинет"),
+                buy_vpn_button(),
+            )
     else:
-        builder.row(
-            InlineKeyboardButton(text="🔑 Получить VPN", callback_data="plans"),
-        )
+        if has_subscription:
+            builder.row(
+                InlineKeyboardButton(text="👤 Личный кабинет", callback_data="account"),
+            )
+        else:
+            builder.row(
+                InlineKeyboardButton(text="👤 Личный кабинет", callback_data="account"),
+                InlineKeyboardButton(text="💳 Купить VPN", callback_data="plans"),
+            )
 
     if has_subscription:
         builder.row(
@@ -85,7 +96,7 @@ async def _send_welcome(
             logger.warning("Welcome photo failed: %s", e)
 
 
-WELCOME_TEXT = f"""
+WELCOME_TEXT_NEW = f"""
 👋 Добро пожаловать в <b>{config.BRAND_NAME}</b>!
 
 🛡 Твой личный помощник для безопасного и свободного интернета.
@@ -100,6 +111,18 @@ WELCOME_TEXT = f"""
 
 📱 Тарифы, оплата и личный кабинет — в приложении
 """
+
+
+def welcome_text_returning(name: str, *, has_subscription: bool) -> str:
+    if has_subscription:
+        return f"""👋 С возвращением, <b>{name}</b>!
+
+🔑 Твой VPN активен — ключи и настройки в личном кабинете.
+
+📱 Управление подпиской и устройствами — в приложении 👇"""
+    return f"""👋 С возвращением, <b>{name}</b>!
+
+📱 Тарифы, оплата и личный кабинет — в приложении 👇"""
 
 
 def _parse_referrer_id(args: str | None) -> int | None:
@@ -137,19 +160,20 @@ async def cmd_start(message: Message, command: CommandObject):
 
         active_sub = await sub_repo.get_active(user.id)
 
+    has_subscription = active_sub is not None
     if is_new:
-        welcome = WELCOME_TEXT + "\n\n🎁 <b>Для тебя — 3 дня бесплатно!</b> Открой приложение 👇"
+        welcome = WELCOME_TEXT_NEW + "\n\n🎁 <b>Для тебя — 3 дня бесплатно!</b> Открой приложение 👇"
     else:
         name = user.first_name or "друг"
-        welcome = f"👋 С возвращением, <b>{name}</b>!\n" + WELCOME_TEXT
+        welcome = welcome_text_returning(name, has_subscription=has_subscription)
 
-    kb = main_keyboard(has_subscription=active_sub is not None)
+    kb = main_keyboard(has_subscription=has_subscription)
 
     await _send_welcome(
         message,
         welcome,
         kb,
-        has_subscription=active_sub is not None,
+        has_subscription=has_subscription,
     )
 
 
@@ -159,12 +183,15 @@ async def cb_main(call: CallbackQuery):
         sub_repo = SubscriptionRepo(session)
         active_sub = await sub_repo.get_active(call.from_user.id)
 
-    kb = main_keyboard(has_subscription=active_sub is not None)
+    has_subscription = active_sub is not None
+    name = call.from_user.first_name or "друг"
+    text = welcome_text_returning(name, has_subscription=has_subscription)
+    kb = main_keyboard(has_subscription=has_subscription)
     await call.message.edit_caption(
-        caption=WELCOME_TEXT,
+        caption=text,
         reply_markup=kb,
     ) if call.message.photo else await call.message.edit_text(
-        text=WELCOME_TEXT,
+        text=text,
         reply_markup=kb,
     )
     await call.answer()

@@ -1185,7 +1185,10 @@
     setAvatar();
     await refresh();
 
-    if (!dashboard?.has_subscription) {
+    const startTab = new URLSearchParams(location.search).get('tab');
+    if (startTab && ['home', 'keys', 'plans', 'support'].includes(startTab)) {
+      showTab(startTab);
+    } else if (!dashboard?.has_subscription) {
       showTab('home');
     }
   }

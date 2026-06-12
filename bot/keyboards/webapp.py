@@ -16,9 +16,24 @@ def is_miniapp_available() -> bool:
     return host not in _PLACEHOLDER_HOSTS
 
 
+def miniapp_url(tab: str | None = None) -> str:
+    url = config.MINI_APP_URL
+    if not tab:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}tab={tab}"
+
+
 def cabinet_button(text: str | None = None) -> InlineKeyboardButton:
     label = text or f"🌐 {config.BRAND_NAME}"
     return InlineKeyboardButton(
         text=label,
-        web_app=WebAppInfo(url=config.MINI_APP_URL),
+        web_app=WebAppInfo(url=miniapp_url()),
+    )
+
+
+def buy_vpn_button(text: str = "💳 Купить VPN") -> InlineKeyboardButton:
+    return InlineKeyboardButton(
+        text=text,
+        web_app=WebAppInfo(url=miniapp_url("plans")),
     )
