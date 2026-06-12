@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 
 def _run_upgrade() -> None:
     """Синхронный alembic upgrade — вызывать только вне event loop или через to_thread."""
+    import os
+
+    # Не даём alembic/env.py fileConfig() понизить root logger до WARN (скрывает INFO бота).
+    os.environ["SKYPATH_SKIP_ALEMBIC_FILECONFIG"] = "1"
     cfg = AlembicConfig("alembic.ini")
     command.upgrade(cfg, "head")
 

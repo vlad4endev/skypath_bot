@@ -31,13 +31,20 @@ from bot.middlewares.user import UserMiddleware
 from bot.scheduler import setup_scheduler
 from bot.admin.api import setup_admin_routes
 
+LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s: %(message)s"
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s: %(message)s",
+    format=LOG_FORMAT,
 )
 logger = logging.getLogger(__name__)
 
 ALLOWED_UPDATES = ["message", "callback_query", "pre_checkout_query", "web_app_data"]
+
+
+def _restore_logging() -> None:
+    """Alembic fileConfig может понизить root до WARN — восстанавливаем INFO."""
+    logging.basicConfig(level=logging.INFO, format=LOG_FORMAT, force=True)
 
 
 async def on_startup(bot: Bot, config: Config):
@@ -46,12 +53,21 @@ async def on_startup(bot: Bot, config: Config):
     except Exception:
         logger.exception("Alembic migration failed — run: docker compose exec bot alembic upgrade head")
         raise
+    _restore_logging()
     await init_db()
     logger.info("Database initialized")
 
     if config.use_polling:
-        await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("BOT_MODE=polling: webhook cleared, Telegram long polling enabled")
+        try:
+            await asyncio.wait_for(
+                bot.delete_webhook(drop_pending_updates=True),
+                timeout=30,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("delete_webhook timed out — starting polling anyway")
+        except Exception:
+            logger.exception("delete_webhook failed — starting polling anyway")
+        logger.warning("BOT_MODE=polling: Telegram long polling enabled")
         return
 
     webhook_url = f"{config.WEBHOOK_BASE_URL.rstrip('/')}/webhook"
@@ -108,9 +124,19 @@ def create_app(config: Config) -> web.Application:
         scheduler = setup_scheduler(bot)
         if config.use_polling:
             polling_task = asyncio.create_task(
-                dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES, handle_signals=False)
+                dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES, handle_signals=False),
+                name="telegram-polling",
             )
-            logger.info("Telegram polling task started")
+            logger.warning("Telegram polling task started")
+
+            def _log_polling_crash(task: asyncio.Task[None]) -> None:
+                if task.cancelled():
+                    return
+                exc = task.exception()
+                if exc is not None:
+                    logger.error("Telegram polling crashed: %s", exc, exc_info=exc)
+
+            polling_task.add_done_callback(_log_polling_crash)
 
     async def _shutdown(**_kwargs):
         nonlocal polling_task, scheduler
