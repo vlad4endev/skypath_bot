@@ -447,7 +447,7 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
 
         assets_dir = cabinet_dist / "assets"
         if assets_dir.is_dir():
-            app.router.add_static("/cabinet/assets/", assets_dir, show_directory=False)
+            app.router.add_static("/cabinet/assets", assets_dir, show_index=False)
 
         logger.info("Web cabinet (React): %s", cabinet_index)
     else:
