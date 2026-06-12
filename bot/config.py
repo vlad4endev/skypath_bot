@@ -72,6 +72,16 @@ class Config:
     XUI_SUB_BASE_URL: str = os.getenv("XUI_SUB_BASE_URL", "")
     XUI_INBOUND_IDS: dict = None  # заполняется в __post_init__
 
+    # Legal
+    TERMS_URL: str = os.getenv(
+        "TERMS_URL",
+        "https://telegra.ph/Polzovatelskoe-soglashenie-02-05-18",
+    )
+    PRIVACY_URL: str = os.getenv(
+        "PRIVACY_URL",
+        "https://telegra.ph/Politika-konfidencialnosti-02-05-18",
+    )
+
     # Support
     SUPPORT_URL: str = os.getenv("SUPPORT_URL", "https://t.me/SkyPathsupport")
     SUPPORT_CHANNEL: str = os.getenv("SUPPORT_CHANNEL", "@SkyPathVPN")

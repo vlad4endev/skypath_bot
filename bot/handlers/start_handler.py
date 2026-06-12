@@ -246,8 +246,24 @@ async def cb_info(call: CallbackQuery):
 <b>Платёж:</b>
 💳 Банковская карта (Platega)
 ₿ Крипто (USDT, BTC, ETH)
+
+━━━━━━━━━━━━━━━━
+<b>📋 Документы</b>
+Используя сервис, вы принимаете условия пользовательского соглашения и политики конфиденциальности.
 """
     builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="📄 Пользовательское соглашение",
+            url=config.TERMS_URL,
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔒 Политика конфиденциальности",
+            url=config.PRIVACY_URL,
+        )
+    )
     if is_miniapp_available():
         builder.row(cabinet_button("📲 Открыть приложение"))
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="main"))

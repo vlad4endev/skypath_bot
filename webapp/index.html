@@ -536,6 +536,39 @@
     .info-key { font-size: 13px; color: var(--muted); }
     .info-val { font-size: 13px; font-weight: 600; }
 
+    /* Legal docs */
+    .legal-note {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+    .legal-links { display: flex; flex-direction: column; gap: 10px; }
+    .legal-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 14px 16px;
+      background: rgba(138, 156, 254, 0.06);
+      border: 1px solid rgba(138, 156, 254, 0.18);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .legal-link:active {
+      background: rgba(138, 156, 254, 0.12);
+      border-color: rgba(138, 156, 254, 0.32);
+    }
+    .legal-link-icon { font-size: 22px; line-height: 1; flex-shrink: 0; }
+    .legal-link-body { flex: 1; min-width: 0; }
+    .legal-link-title { display: block; font-size: 14px; font-weight: 700; margin-bottom: 2px; }
+    .legal-link-desc { display: block; font-size: 12px; color: var(--muted); }
+    .legal-link-arrow { font-size: 20px; color: var(--accent); flex-shrink: 0; }
+
     /* Bottom nav */
     .bottom-nav {
       position: fixed; bottom: 0; left: 0; right: 0;
@@ -693,6 +726,30 @@
       <div class="info-row"><span class="info-key">💻 Windows</span><span class="info-val" style="color:var(--accent)">Nekoray</span></div>
       <div class="info-row"><span class="info-key">🍎 macOS</span><span class="info-val" style="color:var(--accent)">V2Box</span></div>
     </div>
+    <div class="card">
+      <div class="card-title">📋 Документы</div>
+      <p class="legal-note">
+        Используя сервис, вы принимаете условия пользовательского соглашения и политики конфиденциальности.
+      </p>
+      <div class="legal-links">
+        <button type="button" class="legal-link" onclick="openLegalLink(LEGAL_URLS.terms)">
+          <span class="legal-link-icon">📄</span>
+          <span class="legal-link-body">
+            <span class="legal-link-title">Пользовательское соглашение</span>
+            <span class="legal-link-desc">Условия использования сервиса</span>
+          </span>
+          <span class="legal-link-arrow">›</span>
+        </button>
+        <button type="button" class="legal-link" onclick="openLegalLink(LEGAL_URLS.privacy)">
+          <span class="legal-link-icon">🔒</span>
+          <span class="legal-link-body">
+            <span class="legal-link-title">Политика конфиденциальности</span>
+            <span class="legal-link-desc">Как мы обрабатываем ваши данные</span>
+          </span>
+          <span class="legal-link-arrow">›</span>
+        </button>
+      </div>
+    </div>
   </section>
 </div>
 
@@ -760,6 +817,10 @@
   let plansData = {};
   let monthsLabels = {};
   let supportUrl = 'https://t.me/SkyPathsupport';
+  const LEGAL_URLS = {
+    terms: 'https://telegra.ph/Polzovatelskoe-soglashenie-02-05-18',
+    privacy: 'https://telegra.ph/Politika-konfidencialnosti-02-05-18',
+  };
   let selectedPlan = null;
   let selectedMonths = 1;
   let selectedPromoCode = '';
@@ -1498,6 +1559,13 @@
     if (tg?.openTelegramLink) tg.openTelegramLink(supportUrl);
     else if (tg?.openLink) tg.openLink(supportUrl);
     else window.open(supportUrl, '_blank');
+  }
+
+  function openLegalLink(url) {
+    if (!url) return;
+    tg?.HapticFeedback?.impactOccurred?.('light');
+    if (tg?.openLink) tg.openLink(url);
+    else window.open(url, '_blank');
   }
 
   function showTab(tab) {
