@@ -121,6 +121,11 @@ def create_app(config: Config) -> web.Application:
         _lifecycle_started = True
 
         await on_startup(bot, config)
+        try:
+            me = await asyncio.wait_for(bot.get_me(), timeout=15)
+            logger.warning("Telegram bot ready: @%s (id=%s)", me.username, me.id)
+        except Exception:
+            logger.exception("Telegram getMe failed — проверьте BOT_TOKEN и доступ к api.telegram.org")
         scheduler = setup_scheduler(bot)
         if config.use_polling:
             polling_task = asyncio.create_task(

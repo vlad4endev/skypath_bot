@@ -86,13 +86,16 @@ class SubscriptionRepo:
         self.session = session
 
     async def get_active(self, telegram_id: int) -> Optional[Subscription]:
+        """Самая «свежая» активная подписка; при дубликатах ACTIVE берём с max expires_at."""
         result = await self.session.execute(
             select(Subscription).where(
                 and_(
                     Subscription.telegram_id == telegram_id,
                     Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
                 )
-            ).order_by(Subscription.expires_at.desc())
+            )
+            .order_by(Subscription.expires_at.desc(), Subscription.id.desc())
+            .limit(1)
         )
         return result.scalar_one_or_none()
 
