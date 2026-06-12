@@ -163,15 +163,17 @@ class PlategaClient:
         description: str,
         metadata: dict,
         return_url: Optional[str] = None,
+        failed_url: Optional[str] = None,
+        order_id: Optional[str] = None,
     ) -> dict:
         """
         Создать платёж в Platega.
         Возвращает: {payment_id, payment_url, order_id, status}
         """
-        order_id = str(uuid.uuid4())
+        order_id = order_id or str(uuid.uuid4())
         payload_meta = {**metadata, "orderId": order_id}
         return_target = return_url or f"https://t.me/{self.bot_username}"
-        failed_target = f"https://t.me/{self.bot_username}?start=payment_failed"
+        failed_target = failed_url or f"https://t.me/{self.bot_username}?start=payment_failed"
 
         body: dict[str, Any] = {
             "paymentDetails": {

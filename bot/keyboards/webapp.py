@@ -24,6 +24,13 @@ def miniapp_url(tab: str | None = None) -> str:
     return f"{url}{sep}tab={tab}"
 
 
+def miniapp_payment_return_url(order_id: str, outcome: str = "success") -> str:
+    """URL возврата в Mini App после оплаты Platega (success / failed)."""
+    base = config.MINI_APP_URL.rstrip("/")
+    sep = "&" if "?" in base else "?"
+    return f"{base}{sep}tab=home&payment={outcome}&order_id={order_id}"
+
+
 def cabinet_button(text: str | None = None) -> InlineKeyboardButton:
     label = text or f"🌐 {config.BRAND_NAME}"
     return InlineKeyboardButton(

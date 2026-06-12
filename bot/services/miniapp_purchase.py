@@ -71,6 +71,7 @@ async def process_miniapp_purchase(
             username=username,
             first_name=first_name,
             last_name=last_name,
+            for_miniapp=True,
         )
     except Exception as e:
         logger.error("Mini App create order failed: %s", e)

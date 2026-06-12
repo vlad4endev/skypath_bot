@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
 
 from aiogram import Bot
 
 from bot.config import Config, PLANS
+from bot.keyboards.webapp import is_miniapp_available, miniapp_payment_return_url
 from bot.services.payment import (
     PlategaClient,
     PlategaWebhookEvent,
@@ -46,6 +48,7 @@ async def create_paid_order(
     first_name: str | None = None,
     last_name: str | None = None,
     promo_code: str | None = None,
+    for_miniapp: bool = False,
 ) -> CreateOrderResult:
     """Создать подписку (ожидает оплаты) и платёж в БД + Platega."""
     plan = PLANS.get(plan_key)
@@ -80,6 +83,13 @@ async def create_paid_order(
             promo_code=promo_code,
         )
 
+        order_id = str(uuid.uuid4())
+        return_url = None
+        failed_url = None
+        if for_miniapp and is_miniapp_available():
+            return_url = miniapp_payment_return_url(order_id, "success")
+            failed_url = miniapp_payment_return_url(order_id, "failed")
+
         payment_data = await platega.create_payment(
             amount=price,
             description=description,
@@ -90,6 +100,9 @@ async def create_paid_order(
                 "subscription_id": str(sub.id),
                 "promo_code": promo_code or "",
             },
+            order_id=order_id,
+            return_url=return_url,
+            failed_url=failed_url,
         )
 
         payment = await pay_repo.create(

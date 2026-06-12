@@ -7,12 +7,13 @@ from aiogram import Router
 
 from bot.config import Config, PLANS, MONTHS_LABELS
 from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
+from bot.services.payment_processor import process_manual_check
 from bot.services.subscription_url import resolve_subscription_url
 from bot.services.vpn_provision import ensure_subscription_link
 from bot.services.xui_client import XUIClient
 from database.engine import async_session
-from database.repository import UserRepo, SubscriptionRepo
-from database.models import SubscriptionStatus, PlanType
+from database.repository import UserRepo, SubscriptionRepo, PaymentRepo
+from database.models import SubscriptionStatus, PlanType, PaymentStatus
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -297,3 +298,42 @@ async def provision_vpn(request: web.Request) -> web.Response:
     except Exception as e:
         logger.error("Provision VPN error: %s", e)
         return web.json_response({"error": "provision_failed", "message": str(e)}, status=500)
+
+
+async def get_payment_status(request: web.Request) -> web.Response:
+    """Статус заказа для Mini App после возврата с Platega."""
+    order_id = request.match_info.get("order_id", "").strip()
+    try:
+        telegram_id = int(request.query.get("telegram_id", 0))
+    except (TypeError, ValueError):
+        telegram_id = 0
+
+    if not order_id or telegram_id <= 0:
+        return web.json_response({"error": "invalid_request"}, status=400)
+
+    async with async_session() as session:
+        pay_repo = PaymentRepo(session)
+        sub_repo = SubscriptionRepo(session)
+        payment = await pay_repo.get_by_order_id(order_id)
+
+        if not payment or payment.telegram_id != telegram_id:
+            return web.json_response({"error": "not_found"}, status=404)
+
+        if payment.status == PaymentStatus.PENDING:
+            bot = request.app.get("bot")
+            if bot:
+                await process_manual_check(bot, order_id, telegram_id)
+                payment = await pay_repo.get_by_order_id(order_id)
+
+        subscription_url = None
+        if payment.subscription_id:
+            sub = await sub_repo.get_by_id(payment.subscription_id)
+            if sub:
+                subscription_url = resolve_subscription_url(sub, config)
+
+        return web.json_response({
+            "order_id": payment.order_id,
+            "status": payment.status.value,
+            "subscription_url": subscription_url,
+            "fulfilled": payment.fulfilled_at is not None,
+        })

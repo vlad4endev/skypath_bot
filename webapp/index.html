@@ -569,6 +569,18 @@
     }
     .success-title { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
     .success-sub { font-size: 13px; color: var(--muted); line-height: 1.55; margin-bottom: 16px; }
+
+    .pay-wait-card {
+      width: 100%; max-width: 400px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 22px;
+      text-align: center;
+    }
+
+    .pay-wait-title { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+    .pay-wait-sub { font-size: 13px; color: var(--muted); line-height: 1.55; }
   </style>
 </head>
 <body>
@@ -661,6 +673,14 @@
       <button class="copy-btn" onclick="copySuccessLink()">📋 Скопировать</button>
     </div>
     <button class="btn btn-ghost" onclick="closeSuccessOverlay()">Закрыть</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="paymentWaitOverlay">
+  <div class="pay-wait-card">
+    <div class="loader" style="padding:12px 0 20px"><div class="spinner"></div></div>
+    <div class="pay-wait-title">Проверяем оплату…</div>
+    <p class="pay-wait-sub">Обычно это занимает несколько секунд. Не закрывай приложение.</p>
   </div>
 </div>
 
@@ -1156,10 +1176,8 @@
       }
 
       if (data.payment_url) {
-        showToast('💳 Открой оплату — ключ придёт в бот');
-        if (tg?.openLink) tg.openLink(data.payment_url);
-        else window.open(data.payment_url, '_blank');
-        setTimeout(() => tg?.close(), 600);
+        sessionStorage.setItem('pending_order_id', data.order_id || '');
+        window.location.href = data.payment_url;
         return;
       }
       throw new Error('Пустой ответ сервера');
@@ -1168,6 +1186,92 @@
     } finally {
       btn.disabled = false;
     }
+  }
+
+  function showPaymentWaitOverlay() {
+    document.getElementById('paymentWaitOverlay')?.classList.remove('hidden');
+  }
+
+  function hidePaymentWaitOverlay() {
+    document.getElementById('paymentWaitOverlay')?.classList.add('hidden');
+  }
+
+  function cleanPaymentQueryFromUrl() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has('payment') && !params.has('order_id')) return null;
+    const result = {
+      payment: params.get('payment'),
+      orderId: params.get('order_id'),
+      tab: params.get('tab'),
+    };
+    const kept = new URLSearchParams();
+    if (result.tab) kept.set('tab', result.tab);
+    const qs = kept.toString();
+    history.replaceState({}, '', location.pathname + (qs ? `?${qs}` : ''));
+    return result;
+  }
+
+  async function pollPaymentUntilDone(orderId, maxAttempts = 30) {
+    showPaymentWaitOverlay();
+    try {
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const r = await fetch(`${API}/payment/${encodeURIComponent(orderId)}/status?telegram_id=${telegramId}`);
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && data.status === 'succeeded') {
+          await refresh();
+          let link = data.subscription_url || getSubscriptionLink(dashboard?.subscription);
+          if (!link) {
+            link = await provisionVpn({ silent: true });
+            await refresh();
+            link = link || getSubscriptionLink(dashboard?.subscription);
+          }
+          hidePaymentWaitOverlay();
+          if (link) {
+            showSubscriptionSuccess(link, '✅ Оплата прошла успешно!');
+          } else {
+            showToast('✅ Оплата подтверждена');
+            showTab('home');
+          }
+          tg?.HapticFeedback?.notificationOccurred('success');
+          sessionStorage.removeItem('pending_order_id');
+          return;
+        }
+        if (r.ok && data.status === 'cancelled') {
+          hidePaymentWaitOverlay();
+          showToast('❌ Оплата отменена', true);
+          showTab('plans');
+          sessionStorage.removeItem('pending_order_id');
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+      hidePaymentWaitOverlay();
+      showToast('⏳ Оплата обрабатывается. Обнови кабинет через минуту.');
+    } catch (e) {
+      hidePaymentWaitOverlay();
+      showToast('❌ ' + (e.message || 'Не удалось проверить оплату'), true);
+    }
+  }
+
+  async function handlePaymentReturn() {
+    const fromUrl = cleanPaymentQueryFromUrl();
+    const orderId = fromUrl?.orderId || sessionStorage.getItem('pending_order_id');
+    if (!orderId) return false;
+
+    if (fromUrl?.payment === 'failed') {
+      sessionStorage.removeItem('pending_order_id');
+      showToast('❌ Оплата не завершена', true);
+      showTab('plans');
+      return true;
+    }
+
+    if (fromUrl?.payment === 'success' || sessionStorage.getItem('pending_order_id')) {
+      showTab('home');
+      await pollPaymentUntilDone(orderId);
+      return true;
+    }
+
+    return false;
   }
 
   function copyText(text) {
@@ -1189,7 +1293,8 @@
     copyText(getSubscriptionLink(dashboard?.subscription));
   }
 
-  async function provisionVpn() {
+  async function provisionVpn(options = {}) {
+    const { silent = false } = options;
     const user = tg?.initDataUnsafe?.user;
     const btn = document.getElementById('provisionBtn');
     if (btn) btn.disabled = true;
@@ -1208,11 +1313,15 @@
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.message || data.error || 'Не удалось создать ключ');
-      showToast('✅ ' + (data.message || 'Ссылка готова'));
-      await refresh();
-      showTab('keys');
+      if (!silent) {
+        showToast('✅ ' + (data.message || 'Ссылка готова'));
+        await refresh();
+        showTab('keys');
+      }
+      return data.subscription_url || data.vpn_key || null;
     } catch (e) {
-      showToast('❌ ' + (e.message || 'Ошибка'), true);
+      if (!silent) showToast('❌ ' + (e.message || 'Ошибка'), true);
+      return null;
     } finally {
       if (btn) btn.disabled = false;
     }
@@ -1275,6 +1384,8 @@
   async function init() {
     setAvatar();
     await refresh();
+    const paymentHandled = await handlePaymentReturn();
+    if (paymentHandled) return;
 
     const startTab = new URLSearchParams(location.search).get('tab');
     if (startTab && ['home', 'keys', 'plans', 'support'].includes(startTab)) {
