@@ -87,14 +87,16 @@ def create_app(config: Config) -> web.Application:
 
     _lifecycle_started = False
     polling_task: asyncio.Task[None] | None = None
+    scheduler = None
 
     async def _startup(**_kwargs):
-        nonlocal _lifecycle_started, polling_task
+        nonlocal _lifecycle_started, polling_task, scheduler
         if _lifecycle_started:
             return
         _lifecycle_started = True
 
         await on_startup(bot, config)
+        scheduler = setup_scheduler(bot)
         if config.use_polling:
             polling_task = asyncio.create_task(
                 dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES, handle_signals=False)
@@ -102,7 +104,10 @@ def create_app(config: Config) -> web.Application:
             logger.info("Telegram polling task started")
 
     async def _shutdown(**_kwargs):
-        nonlocal polling_task
+        nonlocal polling_task, scheduler
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+            scheduler = None
         if polling_task is not None:
             polling_task.cancel()
             try:
@@ -114,8 +119,6 @@ def create_app(config: Config) -> web.Application:
 
     dp.startup.register(_startup)
     dp.shutdown.register(_shutdown)
-
-    setup_scheduler(bot)
 
     app = web.Application()
     app["bot"] = bot
