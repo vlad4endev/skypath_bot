@@ -1,9 +1,11 @@
 """REST API handlers for web admin panel."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from functools import wraps
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Awaitable
 
@@ -13,8 +15,15 @@ from bot.admin.auth import AdminAuth, verify_password
 from bot.admin.repository import AdminRepo
 from bot.admin.telegram_profile import download_profile_photo, fetch_telegram_profile
 from bot.config import Config, PLANS, MONTHS_LABELS
+from bot.services.broadcast_service import (
+    BROADCAST_TARGETS,
+    count_recipients,
+    execute_broadcast,
+    is_valid_target,
+)
 from database.engine import async_session
 from database.models import (
+    BroadcastStatus,
     PaymentStatus,
     PlanType,
     SubscriptionStatus,
@@ -23,6 +32,7 @@ from database.models import (
     Payment,
     PromoCode,
     Promotion,
+    Broadcast,
 )
 from database.repository import UserRepo
 
@@ -138,6 +148,26 @@ def _promo_json(p: PromoCode) -> dict[str, Any]:
     }
 
 
+def _broadcast_json(b: Broadcast) -> dict[str, Any]:
+    return {
+        "id": b.id,
+        "name": b.name,
+        "text": b.text,
+        "target": b.target,
+        "target_label": BROADCAST_TARGETS.get(b.target, b.target),
+        "status": b.status.value,
+        "send_at": _dt(b.send_at),
+        "sent": b.sent,
+        "sent_count": b.sent_count,
+        "failed_count": b.failed_count,
+        "target_count": b.target_count,
+        "started_at": _dt(b.started_at),
+        "completed_at": _dt(b.completed_at),
+        "error_message": b.error_message,
+        "created_at": _dt(b.created_at),
+    }
+
+
 def _promotion_json(p: Promotion) -> dict[str, Any]:
     return {
         "id": p.id,
@@ -165,6 +195,20 @@ def _parse_dt(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value).replace("Z", ""))
+
+
+def _parse_dt_msk(value: Any) -> datetime | None:
+    """datetime-local из админки трактуем как Europe/Moscow → UTC в БД."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        dt = datetime.fromisoformat(str(value).replace("Z", ""))
+    if dt.tzinfo is not None:
+        return dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    msk = ZoneInfo("Europe/Moscow")
+    return dt.replace(tzinfo=msk).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
 def _parse_str_list(value: Any) -> list | None:
@@ -933,6 +977,114 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
             return _error("Promotion not found", 404)
         return _json({"ok": True})
 
+    # ── Broadcasts (рассылки) ──────────────────────────────────
+
+    async def broadcasts_targets(request: web.Request) -> web.Response:
+        return _json([
+            {"id": key, "label": label}
+            for key, label in BROADCAST_TARGETS.items()
+        ])
+
+    async def broadcasts_estimate(request: web.Request) -> web.Response:
+        target = request.query.get("target", "all")
+        if not is_valid_target(target):
+            return _error("Invalid target")
+        async with async_session() as session:
+            count = await count_recipients(session, target)
+        return _json({"target": target, "count": count})
+
+    async def broadcasts_list(request: web.Request) -> web.Response:
+        status = request.query.get("status") or None
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            items = await repo.list_broadcasts(status=status)
+        return _json([_broadcast_json(b) for b in items])
+
+    async def broadcasts_create(request: web.Request) -> web.Response:
+        body = await _body(request)
+        text = (body.get("text") or "").strip()
+        if not text:
+            return _error("text required")
+        target = (body.get("target") or "all").strip()
+        if not is_valid_target(target):
+            return _error("Invalid target")
+        send_mode = (body.get("send_mode") or "now").strip()
+        name = (body.get("name") or "").strip() or None
+
+        immediate = send_mode != "scheduled"
+        send_at: datetime
+        if immediate:
+            send_at = datetime.utcnow()
+            status = BroadcastStatus.SENDING
+        else:
+            parsed = _parse_dt_msk(body.get("send_at"))
+            if not parsed:
+                return _error("send_at required for scheduled broadcast")
+            if parsed <= datetime.utcnow():
+                return _error("send_at must be in the future (MSK)")
+            send_at = parsed
+            status = BroadcastStatus.SCHEDULED
+
+        async with async_session() as session:
+            target_count = await count_recipients(session, target)
+            repo = AdminRepo(session)
+            broadcast = await repo.create_broadcast(
+                name=name,
+                text=text,
+                target=target,
+                status=status,
+                send_at=send_at,
+                target_count=target_count,
+                started_at=datetime.utcnow() if immediate else None,
+            )
+
+        if immediate:
+            bot = request.app["bot"]
+            asyncio.create_task(
+                execute_broadcast(broadcast.id, bot),
+                name=f"broadcast-{broadcast.id}",
+            )
+
+        return _json(_broadcast_json(broadcast), 201)
+
+    async def broadcasts_send_now(request: web.Request) -> web.Response:
+        broadcast_id = int(request.match_info["broadcast_id"])
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            broadcast = await repo.get_broadcast(broadcast_id)
+        if not broadcast:
+            return _error("Broadcast not found", 404)
+        if broadcast.status not in (BroadcastStatus.SCHEDULED,):
+            return _error("Only scheduled broadcasts can be sent now", 400)
+
+        bot = request.app["bot"]
+        asyncio.create_task(
+            execute_broadcast(broadcast_id, bot),
+            name=f"broadcast-{broadcast_id}",
+        )
+        return _json({"ok": True, "message": "Рассылка запущена"})
+
+    async def broadcasts_cancel(request: web.Request) -> web.Response:
+        broadcast_id = int(request.match_info["broadcast_id"])
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            existing = await repo.get_broadcast(broadcast_id)
+            if not existing:
+                return _error("Broadcast not found", 404)
+            if existing.status != BroadcastStatus.SCHEDULED:
+                return _error("Only scheduled broadcasts can be cancelled", 400)
+            broadcast = await repo.cancel_broadcast(broadcast_id)
+        return _json(_broadcast_json(broadcast))
+
+    async def broadcasts_delete(request: web.Request) -> web.Response:
+        broadcast_id = int(request.match_info["broadcast_id"])
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            ok = await repo.delete_broadcast(broadcast_id)
+        if not ok:
+            return _error("Broadcast not found or cannot be deleted", 404)
+        return _json({"ok": True})
+
     # ── Config reference ───────────────────────────────────────
 
     async def config_plans(request: web.Request) -> web.Response:
@@ -985,6 +1137,13 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         web.post("/admin/api/promotions", promotions_create),
         web.patch("/admin/api/promotions/{promotion_id}", promotions_update),
         web.delete("/admin/api/promotions/{promotion_id}", promotions_delete),
+        web.get("/admin/api/broadcasts", broadcasts_list),
+        web.get("/admin/api/broadcasts/targets", broadcasts_targets),
+        web.get("/admin/api/broadcasts/estimate", broadcasts_estimate),
+        web.post("/admin/api/broadcasts", broadcasts_create),
+        web.post("/admin/api/broadcasts/{broadcast_id}/send", broadcasts_send_now),
+        web.post("/admin/api/broadcasts/{broadcast_id}/cancel", broadcasts_cancel),
+        web.delete("/admin/api/broadcasts/{broadcast_id}", broadcasts_delete),
     ]
     app.router.add_routes(routes)
 
@@ -1006,7 +1165,7 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
 
         app.router.add_get("/admin", _redirect_admin)
         app.router.add_get("/admin/", _serve_admin_spa)
-        for sub_path in ("users", "payments", "promos", "promotions"):
+        for sub_path in ("users", "payments", "promos", "promotions", "broadcasts"):
             app.router.add_get(f"/admin/{sub_path}", _serve_admin_spa)
             app.router.add_get(f"/admin/{sub_path}/", _serve_admin_spa)
         logger.info("Admin panel (React): %s", admin_index)

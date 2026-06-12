@@ -8,6 +8,7 @@ import { UsersPage } from './pages/UsersPage';
 import { PaymentsPage } from './pages/PaymentsPage';
 import { PromosPage } from './pages/PromosPage';
 import { PromotionsPage } from './pages/PromotionsPage';
+import { BroadcastsPage } from './pages/BroadcastsPage';
 import { XuiSyncModal } from './modals/XuiSyncModal';
 import { useToast } from './components/ui';
 
@@ -53,6 +54,7 @@ function AppRoutes() {
             <Route path="payments" element={<PaymentsPage onToast={show} />} />
             <Route path="promotions" element={<PromotionsPage onToast={show} />} />
             <Route path="promos" element={<PromosPage onToast={show} />} />
+            <Route path="broadcasts" element={<BroadcastsPage onToast={show} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

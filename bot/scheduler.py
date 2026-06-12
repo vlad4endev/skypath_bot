@@ -405,6 +405,17 @@ async def _purge_vpn_client(
     logger.info("Purged VPN for sub %s user %s (marketing lead)", sub.id, sub.telegram_id)
 
 
+async def job_process_broadcasts(bot: Bot):
+    """Отправка запланированных рассылок из web-админки."""
+    try:
+        from bot.services.broadcast_service import process_due_broadcasts
+        count = await process_due_broadcasts(bot)
+        if count:
+            logger.info("Processed %s scheduled broadcast(s)", count)
+    except Exception as e:
+        logger.error("job_process_broadcasts failed: %s", e)
+
+
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
 
@@ -436,7 +447,14 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         id="grace_period",
         replace_existing=True,
     )
+    scheduler.add_job(
+        job_process_broadcasts,
+        CronTrigger(minute="*"),
+        args=[bot],
+        id="process_broadcasts",
+        replace_existing=True,
+    )
 
     scheduler.start()
-    logger.info("Scheduler started: 4 jobs active")
+    logger.info("Scheduler started: 5 jobs active")
     return scheduler

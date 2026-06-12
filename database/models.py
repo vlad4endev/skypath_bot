@@ -254,14 +254,35 @@ class PromoCodeUsage(Base):
     )
 
 
+class BroadcastStatus(enum.Enum):
+    SCHEDULED = "scheduled"
+    SENDING = "sending"
+    SENT = "sent"
+    CANCELLED = "cancelled"
+    FAILED = "failed"
+
+
 class Broadcast(Base):
-    """Рассылки"""
+    """Рассылки — массовые сообщения в Telegram"""
     __tablename__ = "broadcasts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str | None] = mapped_column(String(128))
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    target: Mapped[str] = mapped_column(String(32), default="all")  # all / active / expired
-    send_at: Mapped[datetime | None] = mapped_column(DateTime)
+    target: Mapped[str] = mapped_column(String(32), default="all", index=True)
+    status: Mapped[BroadcastStatus] = mapped_column(
+        Enum(BroadcastStatus), default=BroadcastStatus.SCHEDULED, index=True
+    )
+    send_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     sent: Mapped[bool] = mapped_column(Boolean, default=False)
     sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    target_count: Mapped[int | None] = mapped_column(Integer)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_broadcasts_status_send_at", "status", "send_at"),
+    )

@@ -231,3 +231,26 @@ export interface SubscriptionUpdatePayload {
   limit_ip?: number;
   disable?: boolean;
 }
+
+export interface BroadcastTarget {
+  id: string;
+  label: string;
+}
+
+export interface BroadcastRow {
+  id: number;
+  name: string | null;
+  text: string;
+  target: string;
+  target_label: string;
+  status: 'scheduled' | 'sending' | 'sent' | 'cancelled' | 'failed';
+  send_at: string | null;
+  sent: boolean;
+  sent_count: number;
+  failed_count: number;
+  target_count: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  created_at: string | null;
+}

@@ -6,6 +6,7 @@ import {
   CreditCard,
   Tag,
   Percent,
+  Megaphone,
   LogOut,
   Server,
   Menu,
@@ -20,6 +21,7 @@ const nav = [
   { to: '/payments', icon: CreditCard, label: 'Платежи', short: 'Оплаты' },
   { to: '/promotions', icon: Percent, label: 'Акции', short: 'Акции' },
   { to: '/promos', icon: Tag, label: 'Промокоды', short: 'Промо' },
+  { to: '/broadcasts', icon: Megaphone, label: 'Рассылки', short: 'Рассыл.' },
 ];
 
 interface LayoutProps {

@@ -1,5 +1,7 @@
 import type {
   AdminConfig,
+  BroadcastRow,
+  BroadcastTarget,
   DashboardStats,
   Paginated,
   PaymentRow,
@@ -194,4 +196,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  broadcasts: (status?: string) => {
+    const params = status ? `?status=${status}` : '';
+    return request<BroadcastRow[]>(`/admin/api/broadcasts${params}`);
+  },
+
+  broadcastTargets: () => request<BroadcastTarget[]>('/admin/api/broadcasts/targets'),
+
+  broadcastEstimate: (target: string) =>
+    request<{ target: string; count: number }>(
+      `/admin/api/broadcasts/estimate?target=${encodeURIComponent(target)}`,
+    ),
+
+  createBroadcast: (data: Record<string, unknown>) =>
+    request<BroadcastRow>('/admin/api/broadcasts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  sendBroadcastNow: (id: number) =>
+    request<{ ok: boolean }>(`/admin/api/broadcasts/${id}/send`, { method: 'POST' }),
+
+  cancelBroadcast: (id: number) =>
+    request<BroadcastRow>(`/admin/api/broadcasts/${id}/cancel`, { method: 'POST' }),
+
+  deleteBroadcast: (id: number) =>
+    request<{ ok: boolean }>(`/admin/api/broadcasts/${id}`, { method: 'DELETE' }),
 };

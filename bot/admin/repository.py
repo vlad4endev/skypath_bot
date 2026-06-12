@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database.models import (
+    Broadcast,
+    BroadcastStatus,
     Payment,
     PaymentStatus,
     PlanType,
@@ -826,3 +828,50 @@ class AdminRepo:
         )
         await self.session.commit()
         return result.rowcount > 0
+
+    # ── Broadcasts (рассылки) ─────────────────────────────────
+
+    async def list_broadcasts(self, *, status: str | None = None) -> list[Broadcast]:
+        query = select(Broadcast).order_by(Broadcast.created_at.desc())
+        if status:
+            try:
+                query = query.where(Broadcast.status == BroadcastStatus(status))
+            except ValueError:
+                pass
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+    async def get_broadcast(self, broadcast_id: int) -> Broadcast | None:
+        result = await self.session.execute(
+            select(Broadcast).where(Broadcast.id == broadcast_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def create_broadcast(self, **fields) -> Broadcast:
+        broadcast = Broadcast(**fields)
+        self.session.add(broadcast)
+        await self.session.commit()
+        await self.session.refresh(broadcast)
+        return broadcast
+
+    async def cancel_broadcast(self, broadcast_id: int) -> Broadcast | None:
+        broadcast = await self.get_broadcast(broadcast_id)
+        if not broadcast:
+            return None
+        if broadcast.status != BroadcastStatus.SCHEDULED:
+            return broadcast
+        broadcast.status = BroadcastStatus.CANCELLED
+        broadcast.completed_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(broadcast)
+        return broadcast
+
+    async def delete_broadcast(self, broadcast_id: int) -> bool:
+        broadcast = await self.get_broadcast(broadcast_id)
+        if not broadcast:
+            return False
+        if broadcast.status in (BroadcastStatus.SENDING,):
+            return False
+        await self.session.delete(broadcast)
+        await self.session.commit()
+        return True
