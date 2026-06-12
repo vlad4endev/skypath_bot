@@ -142,7 +142,11 @@ def _parse_referrer_id(args: str | None) -> int | None:
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message, command: CommandObject):
+async def cmd_start(
+    message: Message,
+    command: CommandObject,
+    is_new_user: bool = False,
+):
     user = message.from_user
     referrer_id = _parse_referrer_id(command.args)
 
@@ -150,7 +154,9 @@ async def cmd_start(message: Message, command: CommandObject):
         user_repo = UserRepo(session)
         sub_repo = SubscriptionRepo(session)
 
-        db_user, is_new = await user_repo.get_or_create(
+        # UserMiddleware уже вызвал get_or_create до этого хендлера.
+        # Повторный вызов всегда вернёт is_new=False — для приветствия берём is_new_user из middleware.
+        db_user, _ = await user_repo.get_or_create(
             telegram_id=user.id,
             username=user.username,
             first_name=user.first_name,
@@ -164,7 +170,7 @@ async def cmd_start(message: Message, command: CommandObject):
         active_sub = await sub_repo.get_active(user.id)
 
     has_subscription = active_sub is not None
-    if is_new:
+    if is_new_user:
         welcome = WELCOME_TEXT_NEW + "\n\n🎁 <b>Для тебя — 3 дня бесплатно!</b> Открой приложение 👇"
     else:
         name = user.first_name or "друг"
