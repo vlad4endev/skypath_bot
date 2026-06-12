@@ -39,13 +39,17 @@ async def on_startup(bot: Bot, config: Config):
     logger.info("Database initialized")
 
     webhook_url = f"{config.WEBHOOK_BASE_URL.rstrip('/')}/webhook"
-    await bot.set_webhook(
-        url=webhook_url,
-        secret_token=config.WEBHOOK_SECRET,
-        drop_pending_updates=True,
-        allowed_updates=["message", "callback_query", "pre_checkout_query", "web_app_data"],
-    )
-    logger.info("Webhook set: %s", webhook_url)
+    try:
+        await bot.set_webhook(
+            url=webhook_url,
+            secret_token=config.WEBHOOK_SECRET,
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query", "pre_checkout_query", "web_app_data"],
+        )
+        logger.info("Webhook set: %s", webhook_url)
+    except Exception:
+        logger.exception("Failed to set Telegram webhook at %s", webhook_url)
+        raise
 
 
 async def on_shutdown(bot: Bot):
