@@ -10,7 +10,12 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import CommandObject
 
 from bot.config import Config
-from bot.keyboards.webapp import cabinet_button, buy_vpn_button, is_miniapp_available
+from bot.keyboards.webapp import (
+    cabinet_button,
+    buy_vpn_button,
+    is_miniapp_available,
+    web_cabinet_button,
+)
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo
 
@@ -51,6 +56,8 @@ def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🔑 Мои ключи", callback_data="my_vpn"),
             InlineKeyboardButton(text="👤 Аккаунт", callback_data="account"),
         )
+
+    builder.row(web_cabinet_button())
 
     builder.row(
         InlineKeyboardButton(text="💬 Отзывы", callback_data="reviews"),

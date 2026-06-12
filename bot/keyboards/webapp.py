@@ -44,3 +44,11 @@ def buy_vpn_button(text: str = "💳 Купить VPN") -> InlineKeyboardButton:
         text=text,
         web_app=WebAppInfo(url=miniapp_url("plans")),
     )
+
+
+def cabinet_login_url() -> str:
+    return f"{config.CABINET_URL.rstrip('/')}/login"
+
+
+def web_cabinet_button(text: str = "🌐 Веб-версия") -> InlineKeyboardButton:
+    return InlineKeyboardButton(text=text, url=cabinet_login_url())
