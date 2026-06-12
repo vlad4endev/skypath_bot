@@ -38,9 +38,30 @@ class XUIClient:
         self.sub_path = sub_path if sub_path.endswith("/") else f"{sub_path}/"
         self._cookie: Optional[str] = None
         self._cookie_expires: Optional[datetime] = None
+        self._inbound_cache: dict[int, dict[str, Any]] | None = None
+        self._inbound_cache_at: Optional[datetime] = None
 
     def _base_url(self) -> str:
         return f"{self.host}{self.prefix}"
+
+    def _parse_response(self, resp: httpx.Response, label: str) -> dict[str, Any]:
+        if not resp.content:
+            return {}
+
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise RuntimeError(
+                f"{label}: invalid JSON (HTTP {resp.status_code}): {resp.text[:300]}"
+            ) from e
+
+        if not isinstance(data, dict):
+            raise RuntimeError(f"{label}: unexpected response type (HTTP {resp.status_code})")
+
+        if resp.status_code >= 400 or data.get("success") is False:
+            raise RuntimeError(data.get("msg", f"{label} HTTP {resp.status_code}"))
+
+        return data
 
     async def _retry(self, operation: Callable[[], Awaitable[T]], label: str) -> T:
         last_error: Exception | None = None
@@ -78,16 +99,23 @@ class XUIClient:
         if self._cookie and self._cookie_expires and datetime.utcnow() < self._cookie_expires:
             return self._cookie
 
-        async def _login():
+        async def _login_once(use_form: bool) -> str:
+            url = f"{self._base_url()}/login"
             async with httpx.AsyncClient(verify=False, timeout=15) as client:
-                resp = await client.post(
-                    f"{self._base_url()}/login",
-                    headers={"Content-Type": "application/json"},
-                    json={"username": self.username, "password": self.password},
-                )
+                if use_form:
+                    resp = await client.post(
+                        url,
+                        data={"username": self.username, "password": self.password},
+                    )
+                else:
+                    resp = await client.post(
+                        url,
+                        headers={"Content-Type": "application/json"},
+                        json={"username": self.username, "password": self.password},
+                    )
                 resp.raise_for_status()
                 data = resp.json()
-                if not data.get("success", True):
+                if not data.get("success", False):
                     raise RuntimeError(data.get("msg", "login failed"))
 
                 if resp.cookies:
@@ -102,8 +130,18 @@ class XUIClient:
                     raise RuntimeError("3X-UI login: empty session cookie")
 
                 self._cookie_expires = datetime.utcnow() + timedelta(hours=12)
-                logger.info("3X-UI login successful")
+                logger.info("3X-UI login successful (%s)", "form" if use_form else "json")
                 return self._cookie
+
+        async def _login():
+            last_error: Exception | None = None
+            for use_form in (False, True):
+                try:
+                    return await _login_once(use_form)
+                except Exception as e:
+                    last_error = e
+                    logger.warning("3X-UI login %s failed: %s", "form" if use_form else "json", e)
+            raise RuntimeError(f"3X-UI login failed: {last_error}") from last_error
 
         return await self._retry(_login, "login")
 
@@ -127,22 +165,29 @@ class XUIClient:
                     json=json_body,
                 )
 
-            if not resp.content:
-                raise RuntimeError(f"{label}: empty response (HTTP {resp.status_code})")
-
-            try:
-                data = resp.json()
-            except ValueError as e:
-                raise RuntimeError(
-                    f"{label}: invalid JSON (HTTP {resp.status_code}): {resp.text[:200]}"
-                ) from e
-
-            if resp.status_code >= 400 or not data.get("success", False):
-                raise RuntimeError(data.get("msg", f"{label} HTTP {resp.status_code}"))
-
-            return data
+            return self._parse_response(resp, label)
 
         return await self._retry(_call, label)
+
+    async def _post_raw(
+        self,
+        path: str,
+        payload: dict[str, Any],
+        *,
+        label: str,
+    ) -> dict[str, Any]:
+        cookie = await self._get_cookie()
+        url = f"{self._base_url()}{path}"
+        async with httpx.AsyncClient(verify=False, timeout=20) as client:
+            resp = await client.post(
+                url,
+                headers=self._auth_headers(cookie),
+                json=payload,
+            )
+        if not resp.content:
+            logger.warning("%s: empty body (HTTP %s)", label, resp.status_code)
+            return {}
+        return self._parse_response(resp, label)
 
     def _gen_uuid(self) -> str:
         return str(uuid.uuid4())
@@ -177,7 +222,7 @@ class XUIClient:
         traffic_bytes: int,
         limit_ip: int,
         enable: bool,
-        flow: str = "xtls-rprx-vision",
+        flow: str = "",
     ) -> dict[str, Any]:
         return {
             "id": client_uuid,
@@ -304,30 +349,120 @@ class XUIClient:
                 })
         return result
 
+    async def _get_inbound(self, inbound_id: int) -> dict[str, Any] | None:
+        now = datetime.utcnow()
+        if (
+            self._inbound_cache is not None
+            and self._inbound_cache_at
+            and now - self._inbound_cache_at < timedelta(minutes=5)
+        ):
+            return self._inbound_cache.get(inbound_id)
+
+        inbounds = await self.list_inbounds()
+        self._inbound_cache = {
+            int(ib["id"]): ib for ib in inbounds if ib.get("id") is not None
+        }
+        self._inbound_cache_at = now
+        return self._inbound_cache.get(inbound_id)
+
+    def _flow_for_inbound(self, inbound: dict[str, Any] | None) -> str:
+        if not inbound or inbound.get("protocol") != "vless":
+            return ""
+        stream = inbound.get("streamSettings") or {}
+        if isinstance(stream, str):
+            try:
+                stream = json.loads(stream)
+            except json.JSONDecodeError:
+                return ""
+        security = stream.get("security", "")
+        network = stream.get("network", "tcp")
+        if security in ("tls", "reality") and network == "tcp":
+            return "xtls-rprx-vision"
+        return ""
+
+    def _client_for_settings(self, client: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in client.items() if k != "inboundIds"}
+
+    async def _verify_client_exists(self, email: str) -> bool:
+        try:
+            await self.get_client(email)
+            return True
+        except Exception:
+            return False
+
     async def _add_client_legacy(
         self,
         inbound_id: int,
         client: dict[str, Any],
-        cookie: str,
     ) -> None:
+        settings_client = self._client_for_settings(client)
         payload = {
             "id": inbound_id,
-            "settings": (
-                '{"clients":['
-                + json.dumps(client, separators=(",", ":"))
-                + "]}"
-            ),
+            "settings": json.dumps({"clients": [settings_client]}, separators=(",", ":")),
         }
-        url = f"{self._base_url()}/panel/api/inbounds/addClient"
-        async with httpx.AsyncClient(verify=False, timeout=20) as http:
-            resp = await http.post(
-                url,
-                headers=self._auth_headers(cookie),
-                json=payload,
-            )
-        data = resp.json() if resp.content else {}
-        if resp.status_code >= 400 or not data.get("success", False):
-            raise RuntimeError(data.get("msg", f"legacy addClient HTTP {resp.status_code}"))
+        await self._post_raw(
+            "/panel/api/inbounds/addClient",
+            payload,
+            label="legacy addClient",
+        )
+
+    async def _add_client_inbounds(
+        self,
+        inbound_ids: list[int],
+        client: dict[str, Any],
+    ) -> None:
+        settings_client = self._client_for_settings(client)
+        payload = {
+            "inboundIds": inbound_ids,
+            "settings": json.dumps({"clients": [settings_client]}, separators=(",", ":")),
+        }
+        await self._post_raw(
+            "/panel/api/inbounds/addClientInbounds",
+            payload,
+            label="addClientInbounds",
+        )
+
+    async def _create_client_on_panel(
+        self,
+        inbound_id: int,
+        client: dict[str, Any],
+        email: str,
+    ) -> None:
+        errors: list[str] = []
+        attempts: list[tuple[str, Callable[[], Awaitable[None]]]] = [
+            (
+                "clients/add",
+                lambda: self._request(
+                    "POST",
+                    "/panel/api/clients/add",
+                    json_body={
+                        "client": self._client_for_settings(client),
+                        "inboundIds": [inbound_id],
+                    },
+                    label="clients/add",
+                ),
+            ),
+            (
+                "addClientInbounds",
+                lambda: self._add_client_inbounds([inbound_id], client),
+            ),
+            (
+                "addClient",
+                lambda: self._add_client_legacy(inbound_id, client),
+            ),
+        ]
+
+        for name, fn in attempts:
+            try:
+                await fn()
+                if await self._verify_client_exists(email):
+                    logger.info("3X-UI client %s created via %s", email, name)
+                    return
+                errors.append(f"{name}: panel accepted request but client not found")
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+
+        raise RuntimeError("; ".join(errors))
 
     async def add_client(
         self,
@@ -346,6 +481,10 @@ class XUIClient:
         expiry = self._expiry_unix_days(days) if days > 0 else self._expiry_unix(months)
         traffic_bytes = traffic_gb * 1024**3 if traffic_gb else 0
 
+        inbound = await self._get_inbound(inbound_id)
+        if inbound is None:
+            logger.warning("Inbound %s not found in panel, using configured id anyway", inbound_id)
+
         client = self._build_client_payload(
             client_uuid=client_uuid,
             email=email,
@@ -355,21 +494,11 @@ class XUIClient:
             traffic_bytes=traffic_bytes,
             limit_ip=limit_ip,
             enable=True,
+            flow=self._flow_for_inbound(inbound),
         )
 
         async def _add():
-            try:
-                await self._request(
-                    "POST",
-                    "/panel/api/clients/add",
-                    json_body={"client": client, "inboundIds": [inbound_id]},
-                    label="clients/add",
-                )
-            except Exception as e:
-                logger.warning("clients/add failed, trying legacy addClient: %s", e)
-                cookie = await self._get_cookie()
-                await self._add_client_legacy(inbound_id, client, cookie)
-
+            await self._create_client_on_panel(inbound_id, client, email)
             logger.info("VPN client created: %s / inbound %s", email, inbound_id)
             return {
                 "uuid": client_uuid,
@@ -499,7 +628,7 @@ class XUIClient:
         email = self._gen_email(first_name, last_name)
         sub_id = self._gen_sub_id()
         expiry = self._expiry_unix(months)
-
+        inbound = await self._get_inbound(inbound_ids[0]) if inbound_ids else None
         client = self._build_client_payload(
             client_uuid=client_uuid,
             email=email,
@@ -509,40 +638,57 @@ class XUIClient:
             traffic_bytes=0,
             limit_ip=limit_ip,
             enable=True,
+            flow=self._flow_for_inbound(inbound),
         )
 
         async def _bulk_add():
+            errors: list[str] = []
             try:
                 await self._request(
                     "POST",
                     "/panel/api/clients/add",
-                    json_body={"client": client, "inboundIds": inbound_ids},
+                    json_body={"client": self._client_for_settings(client), "inboundIds": inbound_ids},
                     label="clients/add (multi)",
                 )
+                if await self._verify_client_exists(email):
+                    logger.info("Added client %s to %s inbounds", email, len(inbound_ids))
+                    return {
+                        "uuid": client_uuid,
+                        "email": email,
+                        "sub_id": sub_id,
+                        "expiry_unix": expiry,
+                    }
+                errors.append("clients/add: client not found after OK response")
             except Exception as e:
-                logger.warning("bulk clients/add failed, adding per-inbound: %s", e)
-                for iid in inbound_ids:
-                    await self.add_client(
-                        inbound_id=iid,
-                        first_name=first_name,
-                        last_name=last_name,
-                        telegram_id=telegram_id,
-                        months=months,
-                        limit_ip=limit_ip,
-                    )
-                return {
-                    "uuid": client_uuid,
-                    "email": email,
-                    "sub_id": sub_id,
-                    "expiry_unix": expiry,
-                }
+                errors.append(f"clients/add: {e}")
 
-            logger.info("Added client %s to %s inbounds", email, len(inbound_ids))
-            return {
-                "uuid": client_uuid,
-                "email": email,
-                "sub_id": sub_id,
-                "expiry_unix": expiry,
-            }
+            try:
+                await self._add_client_inbounds(inbound_ids, client)
+                if await self._verify_client_exists(email):
+                    logger.info("Added client %s via addClientInbounds", email)
+                    return {
+                        "uuid": client_uuid,
+                        "email": email,
+                        "sub_id": sub_id,
+                        "expiry_unix": expiry,
+                    }
+                errors.append("addClientInbounds: client not found after OK response")
+            except Exception as e:
+                errors.append(f"addClientInbounds: {e}")
+
+            for iid in inbound_ids:
+                try:
+                    await self._create_client_on_panel(iid, client, email)
+                    if await self._verify_client_exists(email):
+                        return {
+                            "uuid": client_uuid,
+                            "email": email,
+                            "sub_id": sub_id,
+                            "expiry_unix": expiry,
+                        }
+                except Exception as e:
+                    errors.append(f"inbound {iid}: {e}")
+
+            raise RuntimeError("; ".join(errors))
 
         return await self._retry(_bulk_add, "addToAllInbounds")

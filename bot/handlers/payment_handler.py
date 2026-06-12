@@ -358,7 +358,7 @@ async def _create_vpn_and_notify(
                     await pay_repo.mark_fulfilled(payment)
 
     except Exception as e:
-        logger.error(f"VPN creation error for {telegram_id}: {e}")
+        logger.exception("VPN creation error for %s (inbound=%s): %s", telegram_id, inbound_id, e)
         await bot.send_message(
             telegram_id,
             "⚠️ <b>Ошибка создания VPN ключа.</b>\n\n"

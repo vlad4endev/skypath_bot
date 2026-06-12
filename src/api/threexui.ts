@@ -120,7 +120,7 @@ function buildClientRecord(
     totalGB: totalBytes,
     expiryTime: client.expiryTime,
     limitIp: 5,
-    flow: "xtls-rprx-vision",
+    flow: "",
     reset: 0,
   };
 }
