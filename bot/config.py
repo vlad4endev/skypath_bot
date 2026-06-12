@@ -36,7 +36,8 @@ class Config:
     BRAND_NAME: str = os.getenv("BRAND_NAME", "SKYFLOW VPN")
     ADMIN_IDS: list[int] = None  # заполняется в __post_init__
 
-    # Server
+    # Server — BOT_MODE: webhook (default) | polling (если Telegram не достучится до VPS)
+    BOT_MODE: str = os.getenv("BOT_MODE", "webhook")
     WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://your-domain.com")
     WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
     PORT: int = int(os.getenv("PORT", "8080"))
@@ -69,7 +70,12 @@ class Config:
     ADMIN_NOTIFY_ID: int = int(os.getenv("ADMIN_NOTIFY_ID", "86517651"))
 
     def __post_init__(self):
+        self.BOT_MODE = self.BOT_MODE.strip().lower()
         self.WEBHOOK_SECRET = resolve_webhook_secret(self.BOT_TOKEN, self.WEBHOOK_SECRET)
+
+    @property
+    def use_polling(self) -> bool:
+        return self.BOT_MODE == "polling"
         self.ADMIN_IDS = [
             int(x) for x in os.getenv("ADMIN_IDS", "86517651").split(",") if x.strip()
         ]

@@ -3,7 +3,9 @@ SkyPath VPN Bot — Production Ready
 Telegram Bot + Mini App для VPN сервиса
 """
 
+import asyncio
 import logging
+import sys
 from pathlib import Path
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -33,10 +35,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+ALLOWED_UPDATES = ["message", "callback_query", "pre_checkout_query", "web_app_data"]
+
 
 async def on_startup(bot: Bot, config: Config):
     await init_db()
     logger.info("Database initialized")
+
+    if config.use_polling:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("BOT_MODE=polling: webhook cleared, Telegram long polling enabled")
+        return
 
     webhook_url = f"{config.WEBHOOK_BASE_URL.rstrip('/')}/webhook"
     try:
@@ -44,7 +53,7 @@ async def on_startup(bot: Bot, config: Config):
             url=webhook_url,
             secret_token=config.WEBHOOK_SECRET,
             drop_pending_updates=True,
-            allowed_updates=["message", "callback_query", "pre_checkout_query", "web_app_data"],
+            allowed_updates=ALLOWED_UPDATES,
         )
         logger.info("Webhook set: %s", webhook_url)
     except Exception:
@@ -52,9 +61,10 @@ async def on_startup(bot: Bot, config: Config):
         raise
 
 
-async def on_shutdown(bot: Bot):
-    await bot.delete_webhook()
-    logger.info("Bot stopped, webhook removed")
+async def on_shutdown(bot: Bot, config: Config):
+    if not config.use_polling:
+        await bot.delete_webhook()
+        logger.info("Bot stopped, webhook removed")
 
 
 def create_app(config: Config) -> web.Application:
@@ -77,11 +87,24 @@ def create_app(config: Config) -> web.Application:
     dp.include_router(admin_handler.router)
     dp.include_router(miniapp_handler.router)
 
-    async def _startup():
+    async def _startup(**_kwargs):
         await on_startup(bot, config)
+        if config.use_polling:
+            task = asyncio.create_task(
+                dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES, handle_signals=False)
+            )
+            app["_polling_task"] = task
+            logger.info("Telegram polling task started")
 
-    async def _shutdown():
-        await on_shutdown(bot)
+    async def _shutdown(**_kwargs):
+        task = app.get("_polling_task")
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        await on_shutdown(bot, config)
 
     dp.startup.register(_startup)
     dp.shutdown.register(_shutdown)
@@ -95,14 +118,18 @@ def create_app(config: Config) -> web.Application:
     # Platega на отдельном пути (без токена в URL — иначе NPM/Telegram могут ломать ':')
     app.router.add_post("/webhook/platega", payment_handler.platega_webhook)
 
-    SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-        secret_token=config.WEBHOOK_SECRET,
-        handle_in_background=True,
-    ).register(app, path="/webhook")
+    if not config.use_polling:
+        SimpleRequestHandler(
+            dispatcher=dp,
+            bot=bot,
+            secret_token=config.WEBHOOK_SECRET,
+            handle_in_background=True,
+        ).register(app, path="/webhook")
+        logger.info("Telegram webhook route: POST /webhook (secret_token)")
+    else:
+        logger.info("Telegram webhook route: disabled (polling mode)")
+
     setup_application(app, dp, bot=bot)
-    logger.info("Telegram webhook route: POST /webhook (secret_token)")
 
     app.router.add_get("/api/config", miniapp_handler.get_config)
     app.router.add_get("/api/user/{telegram_id}", miniapp_handler.get_user_info)
@@ -130,5 +157,7 @@ def create_app(config: Config) -> web.Application:
 
 if __name__ == "__main__":
     cfg = Config()
+    if "--polling" in sys.argv:
+        cfg.BOT_MODE = "polling"
     application = create_app(cfg)
     web.run_app(application, host="0.0.0.0", port=cfg.PORT)

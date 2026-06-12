@@ -21,4 +21,8 @@ curl -s -X POST "${BASE}/webhook" \
 echo ""
 
 echo "=== getWebhookInfo ==="
+if [ -z "${BOT_TOKEN:-}" ]; then
+    echo "BOT_TOKEN не задан — выполни: source scripts/load_env.sh && load_env_file .env"
+    exit 1
+fi
 curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo" | python3 -m json.tool
