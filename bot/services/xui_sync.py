@@ -31,9 +31,9 @@ xui = XUIClient(
 class SyncItemResult:
     user_id: int
     telegram_id: int
-    action: str  # updated | deleted | skipped | error
-    message: str = ""
     subscription_id: int | None = None
+    action: str = "skipped"  # updated | deleted | skipped | error
+    message: str = ""
 
 
 @dataclass
