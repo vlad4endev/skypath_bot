@@ -2,6 +2,7 @@
 Конфигурация из переменных окружения (.env)
 """
 import hashlib
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -9,13 +10,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 # Telegram secret_token: только A-Za-z0-9_- (двоеточие в BOT_TOKEN недопустимо)
 _WEBHOOK_SECRET_RE = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
 
 
 def resolve_webhook_secret(bot_token: str, explicit: str = "") -> str:
+    explicit = (explicit or "").strip()
     if explicit and _WEBHOOK_SECRET_RE.fullmatch(explicit):
         return explicit
+    if explicit:
+        logger.warning(
+            "WEBHOOK_SECRET in .env is invalid for Telegram; using derived secret. "
+            "Remove WEBHOOK_SECRET or use only A-Za-z0-9_-"
+        )
     return hashlib.sha256(bot_token.encode()).hexdigest()[:48]
 
 

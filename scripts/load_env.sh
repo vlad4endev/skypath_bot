@@ -25,3 +25,8 @@ load_env_file() {
     done < "$file"
     set +a
 }
+
+# source scripts/load_env.sh .env  → загрузить файл
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]] && [[ -n "${1:-}" ]]; then
+    load_env_file "$1"
+fi
