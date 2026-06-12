@@ -99,6 +99,9 @@ class Subscription(Base):
     notified_1day: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_expired: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # VPN lifecycle (пробный период: отключение → удаление через 3 дня)
+    vpn_disabled_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -110,7 +113,7 @@ class Subscription(Base):
 
     @property
     def is_active(self) -> bool:
-        if self.status != SubscriptionStatus.ACTIVE:
+        if self.status not in (SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL):
             return False
         if self.expires_at and self.expires_at < datetime.utcnow():
             return False
@@ -125,30 +128,44 @@ class Subscription(Base):
 
 
 class Payment(Base):
-    """История платежей"""
+    """История платежей — заказ, статус провайдера, связь с подпиской."""
     __tablename__ = "payments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     subscription_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("subscriptions.id"))
+    telegram_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
 
-    # ID транзакции платёжного провайдера (Platega)
-    yookassa_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    # Platega / платёжный провайдер
+    provider: Mapped[str] = mapped_column(String(32), default="platega")
     order_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    yookassa_id: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     payment_url: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(String(256))
 
+    # Сумма заказа и фактическая сумма из webhook
     amount: Mapped[float] = mapped_column(Float, nullable=False)
+    paid_amount: Mapped[float | None] = mapped_column(Float)
     currency: Mapped[str] = mapped_column(String(3), default="RUB")
     status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
+    provider_status: Mapped[str | None] = mapped_column(String(64))
 
     plan: Mapped[str | None] = mapped_column(String(16))
     months: Mapped[int] = mapped_column(Integer, default=1)
+    promo_code: Mapped[str | None] = mapped_column(String(32))
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime)
+    webhook_received_at: Mapped[datetime | None] = mapped_column(DateTime)
+    fulfilled_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     user: Mapped["User"] = relationship(back_populates="payments")
     subscription: Mapped["Subscription | None"] = relationship()
+
+    __table_args__ = (
+        Index("ix_payments_user_status", "user_id", "status"),
+        Index("ix_payments_telegram_created", "telegram_id", "created_at"),
+    )
 
 
 class PromoCode(Base):

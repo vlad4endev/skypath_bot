@@ -13,7 +13,7 @@ from sqlalchemy import select, func, and_
 
 from bot.config import Config
 from database.engine import async_session
-from database.repository import UserRepo, SubscriptionRepo
+from database.repository import UserRepo, SubscriptionRepo, PaymentRepo, ACTIVE_SUBSCRIPTION_STATUSES
 from database.models import User, Subscription, Payment, SubscriptionStatus, PaymentStatus
 
 router = Router()
@@ -35,7 +35,7 @@ async def _build_stats_text() -> str:
         total_users = (await session.execute(select(func.count(User.id)))).scalar()
         active_subs = (await session.execute(
             select(func.count(Subscription.id)).where(
-                Subscription.status == SubscriptionStatus.ACTIVE
+                Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES)
             )
         )).scalar()
         yesterday = datetime.utcnow() - timedelta(days=1)
@@ -140,6 +140,15 @@ async def cb_admin_users(call: CallbackQuery):
     await call.answer()
 
 
+def _payment_status_label(status: PaymentStatus) -> str:
+    return {
+        PaymentStatus.PENDING: "⏳ ожидает",
+        PaymentStatus.SUCCEEDED: "✅ оплачен",
+        PaymentStatus.CANCELLED: "❌ отменён",
+        PaymentStatus.REFUNDED: "↩️ возврат",
+    }.get(status, str(status.value))
+
+
 @router.callback_query(F.data == "admin_payments")
 async def cb_admin_payments(call: CallbackQuery):
     if not admin_only(call.from_user.id):
@@ -153,16 +162,42 @@ async def cb_admin_payments(call: CallbackQuery):
             )
         )).scalar()
         revenue = (await session.execute(
-            select(func.sum(Payment.amount)).where(
+            select(func.coalesce(func.sum(Payment.paid_amount), func.sum(Payment.amount))).where(
                 and_(Payment.status == PaymentStatus.SUCCEEDED, Payment.paid_at >= month_ago)
             )
         )).scalar() or 0
+        pay_repo = PaymentRepo(session)
+        recent = await pay_repo.get_recent(limit=12)
+
+    lines = [
+        f"💰 <b>Платежи за 30 дней</b>\n",
+        f"Транзакций: <b>{count}</b>",
+        f"Сумма: <b>{revenue:.0f} руб.</b>\n",
+        "<b>Последние заказы:</b>",
+    ]
+    if not recent:
+        lines.append("<i>Нет записей</i>")
+    else:
+        for p in recent:
+            paid = p.paid_at.strftime("%d.%m %H:%M") if p.paid_at else p.created_at.strftime("%d.%m %H:%M")
+            amt = p.paid_amount or p.amount
+            tid = p.telegram_id or "?"
+            order_short = (p.order_id or "—")[:8]
+            lines.append(
+                f"\n{_payment_status_label(p.status)} "
+                f"<code>{order_short}</code> · {amt:.0f}₽ · {p.plan}/{p.months}м · "
+                f"tg:{tid} · {paid}"
+            )
+            if p.fulfilled_at:
+                lines[-1] += " · 🔑"
+            elif p.status == PaymentStatus.SUCCEEDED:
+                lines[-1] += " · ⚠️ без VPN"
+
     await call.message.edit_text(
-        f"💰 <b>Платежи за 30 дней</b>\n\n"
-        f"Транзакций: <b>{count}</b>\n"
-        f"Сумма: <b>{revenue:.0f} руб.</b>",
+        "\n".join(lines),
         reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_main")
+            InlineKeyboardButton(text="🔄 Обновить", callback_data="admin_payments"),
+            InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_main"),
         ).as_markup(),
     )
     await call.answer()

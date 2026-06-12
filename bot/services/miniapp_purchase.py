@@ -5,9 +5,9 @@ import logging
 from typing import Any
 
 from bot.config import Config, PLANS
-from bot.services.payment import PlategaClient
+from bot.services.payment_processor import create_paid_order
 from database.engine import async_session
-from database.repository import UserRepo, SubscriptionRepo, PaymentRepo
+from database.repository import UserRepo, SubscriptionRepo
 from database.models import PlanType, SubscriptionStatus
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,6 @@ async def process_miniapp_purchase(
     bot: Any | None = None,
 ) -> dict[str, Any]:
     """Создать заказ из Mini App. Возвращает dict для JSON-ответа."""
-    cfg = Config()
     plan_cfg = PLANS.get(plan)
     if not plan_cfg:
         return {"error": "unknown_plan", "message": "Тариф не найден"}
@@ -39,52 +38,26 @@ async def process_miniapp_purchase(
             bot=bot,
         )
 
-    platega = PlategaClient(cfg)
-    limit_ip = plan_cfg.get("limit_ip", 3)
-
-    async with async_session() as session:
-        user_repo = UserRepo(session)
-        sub_repo = SubscriptionRepo(session)
-        pay_repo = PaymentRepo(session)
-
-        user, _ = await user_repo.get_or_create(
+    try:
+        order = await create_paid_order(
             telegram_id=telegram_id,
+            plan_key=plan,
+            months=months,
+            price=price,
             username=username,
             first_name=first_name,
             last_name=last_name,
         )
-        sub = await sub_repo.create_pending(
-            telegram_id=telegram_id,
-            user_id=user.id,
-            plan=PlanType[plan],
-            limit_ip=limit_ip,
-        )
-
-        payment_data = await platega.create_payment(
-            amount=price,
-            description=f"{cfg.BRAND_NAME} — {plan} / {months} мес.",
-            metadata={
-                "telegram_id": str(telegram_id),
-                "plan": plan,
-                "months": str(months),
-                "subscription_id": str(sub.id),
-            },
-        )
-
-        await pay_repo.create(
-            user_id=user.id,
-            subscription_id=sub.id,
-            amount=price,
-            plan=plan,
-            months=months,
-            yookassa_id=payment_data["payment_id"],
-            order_id=payment_data["order_id"],
-            payment_url=payment_data["payment_url"],
-        )
+    except Exception as e:
+        logger.error("Mini App create order failed: %s", e)
+        return {"error": "payment_failed", "message": "Не удалось создать платёж"}
 
     return {
-        "payment_url": payment_data["payment_url"],
-        "payment_id": payment_data["payment_id"],
+        "payment_url": order.payment_url,
+        "payment_id": order.payment_id,
+        "order_id": order.order_id,
+        "amount": order.amount,
+        "subscription_id": order.subscription_id,
     }
 
 
@@ -141,7 +114,10 @@ async def _issue_free_trial(
         sub_repo = SubscriptionRepo(session)
         sub = await sub_repo.get_by_id(sub_id)
 
-    if not sub or sub.status != SubscriptionStatus.ACTIVE or not sub.vpn_key:
+    if not sub or sub.status not in (
+        SubscriptionStatus.ACTIVE,
+        SubscriptionStatus.FREE_TRIAL,
+    ) or not sub.vpn_key:
         return {"error": "provision_failed", "message": "Не удалось выдать пробный ключ"}
 
     return {

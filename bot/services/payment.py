@@ -1,9 +1,11 @@
 """
-Platega.io — создание платежей и обработка webhook
+Platega.io — создание платежей, проверка статуса и разбор webhook.
 """
+import json
 import uuid
 import logging
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any, Literal, Optional
 import httpx
 from bot.config import Config
 
@@ -15,6 +17,70 @@ PAID_STATUSES = frozenset({
 PAID_STATUSES_LOWER = frozenset({
     "paid", "success", "succeeded", "completed", "confirmed",
 })
+CANCELLED_STATUSES = frozenset({
+    "CANCELED", "CANCELLED", "FAILED", "EXPIRED", "REJECTED",
+})
+CANCELLED_STATUSES_LOWER = frozenset({
+    "canceled", "cancelled", "failed", "expired", "rejected",
+})
+
+
+@dataclass(frozen=True)
+class PlategaWebhookEvent:
+  """Нормализованное событие от Platega."""
+  event_type: Literal["paid", "cancelled", "ignored"]
+  order_id: str | None
+  transaction_id: str | None
+  telegram_id: int | None
+  plan: str | None
+  months: int
+  subscription_id: int
+  amount: float
+  currency: str
+  provider_status: str
+  raw: dict[str, Any]
+
+
+def _extract_amount(body: dict[str, Any]) -> float:
+    details = body.get("paymentDetails") or {}
+    if isinstance(details, dict):
+        raw = details.get("amount") or details.get("sum")
+        if raw is not None:
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                pass
+    for key in ("amount", "sum", "total"):
+        if body.get(key) is not None:
+            try:
+                return float(body[key])
+            except (TypeError, ValueError):
+                pass
+    return 0.0
+
+
+def _extract_currency(body: dict[str, Any]) -> str:
+    details = body.get("paymentDetails") or {}
+    if isinstance(details, dict) and details.get("currency"):
+        return str(details["currency"]).upper()
+    return str(body.get("currency") or "RUB").upper()
+
+
+def _parse_payload_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value) if value is not None and value != "" else default
+    except (TypeError, ValueError):
+        return default
+
+
+def classify_provider_status(status_raw: str) -> Literal["paid", "cancelled", "ignored"]:
+    upper = status_raw.upper()
+    lower = status_raw.lower()
+    if upper in PAID_STATUSES or lower in PAID_STATUSES_LOWER:
+        return "paid"
+    if upper in CANCELLED_STATUSES or lower in CANCELLED_STATUSES_LOWER:
+        return "cancelled"
+    return "ignored"
 
 
 class PlategaClient:
@@ -41,7 +107,7 @@ class PlategaClient:
     ) -> dict:
         """
         Создать платёж в Platega.
-        Возвращает: {payment_id, payment_url, order_id}
+        Возвращает: {payment_id, payment_url, order_id, status}
         """
         order_id = str(uuid.uuid4())
         payload_meta = {**metadata, "orderId": order_id}
@@ -78,8 +144,13 @@ class PlategaClient:
             logger.error("Platega response without payment URL: %s", data)
             raise RuntimeError("Platega: payment URL missing in response")
 
-        transaction_id = data.get("id") or data.get("transactionId") or order_id
-        logger.info("Payment created: %s / %s RUB", transaction_id, amount)
+        transaction_id = str(data.get("id") or data.get("transactionId") or order_id)
+        logger.info(
+            "Platega payment created order=%s tx=%s amount=%s RUB",
+            order_id,
+            transaction_id,
+            amount,
+        )
         return {
             "payment_id": transaction_id,
             "payment_url": payment_url,
@@ -101,22 +172,31 @@ class PlategaClient:
 
         data = resp.json()
         status = str(data.get("status", "pending"))
-        if status.upper() in PAID_STATUSES or status.lower() in PAID_STATUSES_LOWER:
+        kind = classify_provider_status(status)
+        if kind == "paid":
             return "succeeded"
-        if status.upper() == "CANCELED" or status.lower() in ("canceled", "cancelled", "failed"):
+        if kind == "cancelled":
             return "cancelled"
         return "pending"
 
+    async def fetch_transaction(self, transaction_id: str) -> dict[str, Any] | None:
+        """Получить полные данные транзакции из API."""
+        url = f"https://app.platega.io/transaction/{transaction_id}"
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url, headers=self._headers())
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        return data if isinstance(data, dict) else None
 
-def parse_platega_webhook(body: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """Парсинг webhook Platega при успешной оплате."""
+
+def parse_platega_webhook(body: dict[str, Any]) -> Optional[PlategaWebhookEvent]:
+    """Разбор webhook Platega в единую структуру."""
     if not body or not isinstance(body, dict):
         return None
 
     status_raw = str(body.get("status", ""))
-    status_upper = status_raw.upper()
-    if status_upper not in PAID_STATUSES and status_raw.lower() not in PAID_STATUSES_LOWER:
-        return None
+    event_type = classify_provider_status(status_raw)
 
     payload = body.get("payload") or {}
     if not isinstance(payload, dict):
@@ -124,31 +204,47 @@ def parse_platega_webhook(body: dict[str, Any]) -> Optional[dict[str, Any]]:
 
     order_id = body.get("orderId") or payload.get("orderId")
     transaction_id = body.get("id") or body.get("transactionId")
+    if transaction_id is not None:
+        transaction_id = str(transaction_id)
+    if order_id is not None:
+        order_id = str(order_id)
 
     if not order_id and not transaction_id:
         return None
 
-    telegram_id = payload.get("telegram_id") or payload.get("userId")
-    plan = payload.get("plan")
-    months = payload.get("months", 1)
-    subscription_id = payload.get("subscription_id", 0)
+    telegram_raw = payload.get("telegram_id") or payload.get("userId")
+    telegram_id = _parse_payload_int(telegram_raw, 0) or None
 
-    try:
-        months = int(months)
-    except (TypeError, ValueError):
-        months = 1
+    return PlategaWebhookEvent(
+        event_type=event_type,
+        order_id=order_id,
+        transaction_id=transaction_id,
+        telegram_id=telegram_id,
+        plan=str(payload.get("plan") or "") or None,
+        months=_parse_payload_int(payload.get("months"), 1),
+        subscription_id=_parse_payload_int(payload.get("subscription_id"), 0),
+        amount=_extract_amount(body),
+        currency=_extract_currency(body),
+        provider_status=status_raw,
+        raw=body,
+    )
 
-    try:
-        subscription_id = int(subscription_id) if subscription_id else 0
-    except (TypeError, ValueError):
-        subscription_id = 0
 
+def webhook_event_to_json(event: PlategaWebhookEvent) -> str:
+    return json.dumps(event.raw, ensure_ascii=False, default=str)
+
+
+# Обратная совместимость для старых вызовов
+def parse_platega_webhook_legacy(body: dict[str, Any]) -> Optional[dict[str, Any]]:
+    event = parse_platega_webhook(body)
+    if not event or event.event_type != "paid":
+        return None
     return {
-        "order_id": order_id,
-        "transaction_id": transaction_id,
-        "telegram_id": str(telegram_id) if telegram_id is not None else None,
-        "plan": plan,
-        "months": months,
-        "subscription_id": subscription_id,
-        "amount": float(body.get("amount", 0) or 0),
+        "order_id": event.order_id,
+        "transaction_id": event.transaction_id,
+        "telegram_id": str(event.telegram_id) if event.telegram_id else None,
+        "plan": event.plan,
+        "months": event.months,
+        "subscription_id": event.subscription_id,
+        "amount": event.amount,
     }

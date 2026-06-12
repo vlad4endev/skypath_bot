@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.models import User, Subscription, Payment, PromoCode, SubscriptionStatus, PaymentStatus, PlanType
 
+ACTIVE_SUBSCRIPTION_STATUSES = (SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL)
+
 
 class UserRepo:
     def __init__(self, session: AsyncSession):
@@ -76,7 +78,7 @@ class SubscriptionRepo:
             select(Subscription).where(
                 and_(
                     Subscription.telegram_id == telegram_id,
-                    Subscription.status == SubscriptionStatus.ACTIVE,
+                    Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
                 )
             ).order_by(Subscription.expires_at.desc())
         )
@@ -107,13 +109,21 @@ class SubscriptionRepo:
         )
         return result.scalar_one_or_none()
 
-    async def create_pending(self, telegram_id: int, user_id: int, plan: PlanType, limit_ip: int = 3) -> Subscription:
+    async def create_pending(
+        self,
+        telegram_id: int,
+        user_id: int,
+        plan: PlanType,
+        limit_ip: int = 3,
+        promo_code: str | None = None,
+    ) -> Subscription:
         sub = Subscription(
             telegram_id=telegram_id,
             user_id=user_id,
             plan=plan,
             status=SubscriptionStatus.PENDING,
             limit_ip=limit_ip,
+            promo_code=promo_code,
         )
         self.session.add(sub)
         await self.session.commit()
@@ -126,13 +136,16 @@ class SubscriptionRepo:
         vpn_sub_id: str, vpn_key: str,
         inbound_id: int,
         days: int = 0,
+        traffic_gb: int = 0,
     ) -> Subscription:
-        sub.status = SubscriptionStatus.ACTIVE
         sub.started_at = datetime.utcnow()
         if days > 0:
+            sub.status = SubscriptionStatus.FREE_TRIAL
             sub.expires_at = datetime.utcnow() + timedelta(days=days)
             sub.months_paid = 0
+            sub.traffic_gb = traffic_gb
         else:
+            sub.status = SubscriptionStatus.ACTIVE
             sub.expires_at = datetime.utcnow() + timedelta(days=30 * months)
             sub.months_paid = months
         sub.vpn_uuid = vpn_uuid
@@ -140,6 +153,7 @@ class SubscriptionRepo:
         sub.vpn_sub_id = vpn_sub_id
         sub.vpn_key = vpn_key
         sub.inbound_id = inbound_id
+        sub.vpn_disabled_at = None
         sub.updated_at = datetime.utcnow()
         await self.session.commit()
         await self.session.refresh(sub)
@@ -174,6 +188,39 @@ class SubscriptionRepo:
         await self.session.commit()
         return sub
 
+    async def mark_vpn_disabled(self, sub: Subscription) -> Subscription:
+        sub.vpn_disabled_at = datetime.utcnow()
+        sub.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(sub)
+        return sub
+
+    async def clear_vpn_client(self, sub: Subscription) -> Subscription:
+        sub.vpn_uuid = None
+        sub.vpn_email = None
+        sub.vpn_sub_id = None
+        sub.vpn_key = None
+        sub.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(sub)
+        return sub
+
+    async def get_free_trials_pending_vpn_deletion(self) -> list[Subscription]:
+        """Пробные подписки: VPN отключён ≥3 дней назад — пора удалить из 3X-UI."""
+        cutoff = datetime.utcnow() - timedelta(days=3)
+        result = await self.session.execute(
+            select(Subscription).where(
+                and_(
+                    Subscription.plan == PlanType.FREE,
+                    Subscription.status == SubscriptionStatus.EXPIRED,
+                    Subscription.vpn_disabled_at.isnot(None),
+                    Subscription.vpn_disabled_at <= cutoff,
+                    Subscription.vpn_uuid.isnot(None),
+                )
+            )
+        )
+        return result.scalars().all()
+
     async def get_expiring_tomorrow(self) -> list[Subscription]:
         """Истекают завтра — для напоминания"""
         tomorrow_start = datetime.utcnow() + timedelta(days=1)
@@ -181,7 +228,7 @@ class SubscriptionRepo:
         result = await self.session.execute(
             select(Subscription).where(
                 and_(
-                    Subscription.status == SubscriptionStatus.ACTIVE,
+                    Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
                     Subscription.expires_at >= tomorrow_start,
                     Subscription.expires_at < tomorrow_end,
                     Subscription.notified_1day == False,
@@ -197,7 +244,7 @@ class SubscriptionRepo:
         result = await self.session.execute(
             select(Subscription).where(
                 and_(
-                    Subscription.status == SubscriptionStatus.ACTIVE,
+                    Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES),
                     Subscription.expires_at >= today_start,
                     Subscription.expires_at < today_end,
                     Subscription.notified_expired == False,
@@ -208,7 +255,9 @@ class SubscriptionRepo:
 
     async def get_all_active(self) -> list[Subscription]:
         result = await self.session.execute(
-            select(Subscription).where(Subscription.status == SubscriptionStatus.ACTIVE)
+            select(Subscription).where(
+                Subscription.status.in_(ACTIVE_SUBSCRIPTION_STATUSES)
+            )
         )
         return result.scalars().all()
 
@@ -217,26 +266,53 @@ class PaymentRepo:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    def _payment_ref_filter(self, payment_ref: str):
+        return or_(
+            Payment.yookassa_id == payment_ref,
+            Payment.order_id == payment_ref,
+        )
+
     async def create(
-        self, user_id: int, subscription_id: int,
-        amount: float, plan: str, months: int,
-        yookassa_id: str, order_id: str, payment_url: str
+        self,
+        user_id: int,
+        subscription_id: int,
+        amount: float,
+        plan: str,
+        months: int,
+        provider_transaction_id: str,
+        order_id: str,
+        payment_url: str,
+        *,
+        telegram_id: int | None = None,
+        description: str | None = None,
+        promo_code: str | None = None,
+        provider: str = "platega",
     ) -> Payment:
         pay = Payment(
             user_id=user_id,
+            telegram_id=telegram_id,
             subscription_id=subscription_id,
             amount=amount,
             plan=plan,
             months=months,
-            yookassa_id=yookassa_id,
+            yookassa_id=provider_transaction_id,
             order_id=order_id,
             payment_url=payment_url,
+            description=description,
+            promo_code=promo_code,
+            provider=provider,
             status=PaymentStatus.PENDING,
         )
         self.session.add(pay)
         await self.session.commit()
         await self.session.refresh(pay)
         return pay
+
+    async def get_by_id(self, payment_id: int) -> Optional[Payment]:
+        result = await self.session.execute(
+            select(Payment).where(Payment.id == payment_id)
+        )
+        return result.scalar_one_or_none()
 
     async def get_by_yookassa_id(self, yookassa_id: str) -> Optional[Payment]:
         result = await self.session.execute(
@@ -247,12 +323,7 @@ class PaymentRepo:
     async def get_by_payment_ref(self, payment_ref: str) -> Optional[Payment]:
         """Найти платёж по ID провайдера или order_id."""
         result = await self.session.execute(
-            select(Payment).where(
-                or_(
-                    Payment.yookassa_id == payment_ref,
-                    Payment.order_id == payment_ref,
-                )
-            )
+            select(Payment).where(self._payment_ref_filter(payment_ref))
         )
         return result.scalar_one_or_none()
 
@@ -262,10 +333,59 @@ class PaymentRepo:
         )
         return result.scalar_one_or_none()
 
+    async def get_recent(self, limit: int = 20) -> list[Payment]:
+        result = await self.session.execute(
+            select(Payment)
+            .order_by(Payment.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def get_for_user(self, telegram_id: int, limit: int = 10) -> list[Payment]:
+        result = await self.session.execute(
+            select(Payment)
+            .where(Payment.telegram_id == telegram_id)
+            .order_by(Payment.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def record_webhook(
+        self,
+        payment: Payment,
+        *,
+        provider_status: str,
+        paid_amount: float | None = None,
+        transaction_id: str | None = None,
+    ) -> Payment:
+        payment.webhook_received_at = datetime.utcnow()
+        payment.provider_status = provider_status
+        if paid_amount is not None and paid_amount > 0:
+            payment.paid_amount = paid_amount
+        if transaction_id and not payment.yookassa_id:
+            payment.yookassa_id = transaction_id
+        await self.session.commit()
+        await self.session.refresh(payment)
+        return payment
+
     async def mark_paid(self, payment: Payment) -> Payment:
         payment.status = PaymentStatus.SUCCEEDED
         payment.paid_at = datetime.utcnow()
         await self.session.commit()
+        return payment
+
+    async def mark_cancelled(self, payment: Payment, provider_status: str = "") -> Payment:
+        payment.status = PaymentStatus.CANCELLED
+        if provider_status:
+            payment.provider_status = provider_status
+        await self.session.commit()
+        await self.session.refresh(payment)
+        return payment
+
+    async def mark_fulfilled(self, payment: Payment) -> Payment:
+        payment.fulfilled_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(payment)
         return payment
 
     async def count_succeeded_for_user(self, user_id: int) -> int:
@@ -278,25 +398,48 @@ class PaymentRepo:
 
     async def claim_payment(self, payment_ref: str) -> Optional[Payment]:
         """Идемпотентно пометить платёж оплаченным (только из PENDING)."""
+        return await self.claim_success(payment_ref)
+
+    async def claim_success(
+        self,
+        payment_ref: str,
+        *,
+        provider_status: str | None = None,
+        paid_amount: float | None = None,
+        transaction_id: str | None = None,
+    ) -> Optional[Payment]:
+        """Идемпотентно подтвердить оплату и сохранить данные провайдера."""
+        now = datetime.utcnow()
+        values: dict = {
+            "status": PaymentStatus.SUCCEEDED,
+            "paid_at": now,
+            "webhook_received_at": now,
+        }
+        if provider_status:
+            values["provider_status"] = provider_status
+        if paid_amount is not None and paid_amount > 0:
+            values["paid_amount"] = paid_amount
+
         result = await self.session.execute(
             update(Payment)
             .where(
                 and_(
-                    or_(
-                        Payment.yookassa_id == payment_ref,
-                        Payment.order_id == payment_ref,
-                    ),
+                    self._payment_ref_filter(payment_ref),
                     Payment.status == PaymentStatus.PENDING,
                 )
             )
-            .values(status=PaymentStatus.SUCCEEDED, paid_at=datetime.utcnow())
+            .values(**values)
             .returning(Payment)
         )
         payment = result.scalar_one_or_none()
         if payment:
+            if transaction_id and not payment.yookassa_id:
+                payment.yookassa_id = transaction_id
             await self.session.commit()
             await self.session.refresh(payment)
-        return payment
+            return payment
+
+        return None
 
 
 class PromoRepo:

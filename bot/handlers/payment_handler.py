@@ -12,9 +12,9 @@ from aiohttp.web_request import Request
 
 from bot.config import Config, PLANS, MONTHS_LABELS
 from database.engine import async_session
-from database.repository import UserRepo, SubscriptionRepo, PaymentRepo, PromoRepo
-from database.models import PlanType, SubscriptionStatus, PaymentStatus
-from bot.services.payment import PlategaClient, parse_platega_webhook
+from database.repository import UserRepo, SubscriptionRepo, PaymentRepo
+from database.models import PlanType, SubscriptionStatus
+from bot.services.payment_processor import create_paid_order, process_manual_check, process_webhook
 from bot.services.xui_client import XUIClient
 from bot.handlers.referral_handler import process_referral_bonus
 
@@ -22,8 +22,6 @@ router = Router()
 logger = logging.getLogger(__name__)
 config = Config()
 
-# Клиенты сервисов
-platega = PlategaClient(config)
 xui = XUIClient(
     host=config.XUI_HOST,
     url_prefix=config.XUI_URL_PREFIX,
@@ -32,123 +30,6 @@ xui = XUIClient(
     api_token=config.XUI_API_TOKEN,
     sub_path=config.XUI_SUB_PATH,
 )
-
-
-@router.callback_query(F.data.startswith("confirm_plan:"))
-async def cb_confirm_plan(call: CallbackQuery):
-    """
-    Создать платёж и отправить ссылку пользователю
-    confirm_plan:{plan_key}:{months}:{price}[:promo_CODE]
-    """
-    parts = call.data.split(":")
-    plan_key = parts[1]
-    months = int(parts[2])
-    price = int(parts[3])
-    promo_code = None
-
-    if len(parts) > 4 and parts[4].startswith("promo_"):
-        promo_code = parts[4].replace("promo_", "")
-
-    plan = PLANS.get(plan_key)
-    if not plan:
-        await call.answer("Тариф не найден", show_alert=True)
-        return
-
-    user = call.from_user
-
-    # Бесплатный период — выдаём сразу без оплаты
-    if plan_key == "FREE" or price == 0:
-        await call.answer("⏳ Создаём твой VPN...")
-        await _issue_free_trial(call, user)
-        return
-
-    # Создаём запись подписки в БД
-    async with async_session() as session:
-        user_repo = UserRepo(session)
-        sub_repo = SubscriptionRepo(session)
-        pay_repo = PaymentRepo(session)
-        promo_repo = PromoRepo(session)
-
-        db_user, _ = await user_repo.get_or_create(
-            telegram_id=user.id,
-            username=user.username,
-            first_name=user.first_name,
-            last_name=user.last_name,
-        )
-
-        # Применяем промокод
-        if promo_code:
-            promo = await promo_repo.get_by_code(promo_code)
-            if promo and promo.is_valid:
-                await promo_repo.use(promo)
-
-        plan_enum = PlanType[plan_key]
-        sub = await sub_repo.create_pending(
-            telegram_id=user.id,
-            user_id=db_user.id,
-            plan=plan_enum,
-            limit_ip=plan["limit_ip"],
-        )
-
-        # Создаём платёж в Platega
-        try:
-            payment_data = await platega.create_payment(
-                amount=price,
-                description=f"{config.BRAND_NAME} — {plan['name']} на {months} мес.",
-                metadata={
-                    "telegram_id": str(user.id),
-                    "plan": plan_key,
-                    "months": str(months),
-                    "subscription_id": str(sub.id),
-                    "promo_code": promo_code or "",
-                },
-            )
-        except Exception as e:
-            logger.error("Platega create payment error: %s", e)
-            await call.answer("❌ Ошибка создания платежа. Попробуй ещё раз.", show_alert=True)
-            return
-
-        # Сохраняем платёж
-        await pay_repo.create(
-            user_id=db_user.id,
-            subscription_id=sub.id,
-            amount=price,
-            plan=plan_key,
-            months=months,
-            yookassa_id=payment_data["payment_id"],
-            order_id=payment_data["order_id"],
-            payment_url=payment_data["payment_url"],
-        )
-
-    text = f"""
-💳 <b>Оплата</b>
-
-📦 Тариф: <b>{plan['name']}</b>
-⏱ Срок: <b>{months} мес.</b>
-💰 Сумма: <b>{price} руб.</b>
-
-Нажми кнопку ниже для оплаты.
-После оплаты VPN ключ придёт автоматически в этот чат! 🔑
-
-<i>⏱ Ссылка действительна 15 минут</i>
-"""
-
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=f"💳 Оплатить {price} руб.",
-            url=payment_data["payment_url"],
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"check_payment:{payment_data['payment_id']}"),
-    )
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="plans"))
-
-    await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
-        if call.message.photo else \
-        await call.message.edit_text(text=text, reply_markup=builder.as_markup())
-    await call.answer()
 
 
 @router.callback_query(F.data.startswith("check_payment:"))
@@ -164,12 +45,8 @@ async def cb_check_payment(call: CallbackQuery):
         await call.answer("❌ Платёж не найден", show_alert=True)
         return
 
-    if payment.status == PaymentStatus.SUCCEEDED:
-        await call.answer("✅ Подписка уже активирована!")
-        return
-
     try:
-        status = await platega.check_payment_status(payment.yookassa_id or payment_ref)
+        status = await process_manual_check(call.bot, payment_ref, call.from_user.id)
     except Exception as e:
         logger.error("Check payment error: %s", e)
         await call.answer("❌ Ошибка проверки. Попробуй позже.", show_alert=True)
@@ -177,19 +54,12 @@ async def cb_check_payment(call: CallbackQuery):
 
     if status == "succeeded":
         await call.answer("✅ Оплата прошла! Выдаём ключ...")
-        await _process_successful_payment(
-            bot=call.bot,
-            payment_id=payment.order_id or payment_ref,
-            telegram_id=call.from_user.id,
-            plan=payment.plan,
-            months=payment.months,
-            amount=payment.amount,
-            subscription_id=payment.subscription_id,
-        )
     elif status == "pending":
         await call.answer("⏳ Оплата ещё не прошла. Подожди или попробуй снова.", show_alert=True)
-    else:
+    elif status == "cancelled":
         await call.answer("❌ Оплата отменена или истекла.", show_alert=True)
+    else:
+        await call.answer("❌ Платёж не найден", show_alert=True)
 
 
 async def _issue_free_trial(call: CallbackQuery, user):
@@ -217,7 +87,7 @@ async def _issue_free_trial(call: CallbackQuery, user):
             telegram_id=user.id,
             user_id=db_user.id,
             plan=PlanType.FREE,
-            limit_ip=1,
+            limit_ip=PLANS["FREE"]["limit_ip"],
         )
 
     await _create_vpn_and_notify(
@@ -233,19 +103,66 @@ async def _issue_free_trial(call: CallbackQuery, user):
     )
 
 
+async def _disable_trial_vpn_for_user(telegram_id: int, exclude_sub_id: int | None = None) -> None:
+    """Отключить пробные VPN-клиенты после оплаты платного тарифа."""
+    from database.models import PlanType
+
+    async with async_session() as session:
+        sub_repo = SubscriptionRepo(session)
+        subs = await sub_repo.get_all_for_user(telegram_id)
+
+    for sub in subs:
+        if sub.id == exclude_sub_id or sub.plan != PlanType.FREE:
+            continue
+        if sub.status not in (SubscriptionStatus.FREE_TRIAL, SubscriptionStatus.ACTIVE):
+            continue
+        if not (sub.vpn_uuid and sub.vpn_email and sub.vpn_sub_id and sub.inbound_id):
+            continue
+        try:
+            await xui.disable_client(
+                inbound_id=sub.inbound_id,
+                client_uuid=sub.vpn_uuid,
+                email=sub.vpn_email,
+                sub_id=sub.vpn_sub_id,
+                telegram_id=sub.telegram_id,
+                limit_ip=sub.limit_ip,
+            )
+        except Exception as e:
+            logger.warning("Failed to disable trial VPN %s: %s", sub.id, e)
+
+        async with async_session() as session:
+            sub_repo = SubscriptionRepo(session)
+            s = await sub_repo.get_by_id(sub.id)
+            if s:
+                await sub_repo.expire(s)
+                await sub_repo.mark_vpn_disabled(s)
+
+
 async def _process_successful_payment(
     bot: Bot, payment_id: str, telegram_id: int,
-    plan: str, months: int, amount: float, subscription_id: int
+    plan: str, months: int, amount: float, subscription_id: int,
+    payment_db_id: int | None = None,
 ):
     """Обработать успешный платёж: создать VPN + уведомить (идемпотентно)."""
+    await _disable_trial_vpn_for_user(telegram_id, exclude_sub_id=subscription_id)
+
     async with async_session() as session:
         pay_repo = PaymentRepo(session)
         user_repo = UserRepo(session)
         sub_repo = SubscriptionRepo(session)
 
-        payment = await pay_repo.claim_payment(payment_id)
+        payment = None
+        if payment_db_id:
+            payment = await pay_repo.get_by_id(payment_db_id)
         if not payment:
-            logger.info("Payment %s already processed or not found", payment_id)
+            payment = await pay_repo.get_by_payment_ref(payment_id)
+
+        if not payment:
+            logger.info("Payment %s not found for fulfillment", payment_id)
+            return
+
+        if payment.fulfilled_at:
+            logger.info("Payment %s already fulfilled", payment.id)
             return
 
         if not subscription_id and payment.subscription_id:
@@ -254,10 +171,20 @@ async def _process_successful_payment(
             plan = payment.plan
         if payment.months:
             months = payment.months
+        if not amount and payment.paid_amount:
+            amount = payment.paid_amount
+        elif not amount:
+            amount = payment.amount
 
         user = await user_repo.get_by_telegram_id(telegram_id)
         sub = await sub_repo.get_by_id(subscription_id) if subscription_id else None
-        if sub and sub.status == SubscriptionStatus.ACTIVE and sub.vpn_key:
+        if (
+            sub
+            and sub.status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL)
+            and sub.vpn_key
+            and sub.plan != PlanType.FREE
+        ):
+            await pay_repo.mark_fulfilled(payment)
             logger.info("Subscription %s already active with key", subscription_id)
             return
 
@@ -272,6 +199,8 @@ async def _process_successful_payment(
         days=0,
         plan_name=plan_config["name"],
         amount=amount,
+        order_id=payment.order_id if payment else None,
+        payment_db_id=payment.id if payment else None,
     )
 
     if user and user.referrer_id:
@@ -279,13 +208,17 @@ async def _process_successful_payment(
 
     try:
         user_name = user.full_name if user else f"User {telegram_id}"
-        await bot.send_message(
-            config.ADMIN_NOTIFY_ID,
+        paid_str = f"{payment.paid_amount or amount:.0f}" if payment else f"{amount:.0f}"
+        admin_text = (
             f"💰 <b>Новая оплата!</b>\n\n"
             f"👤 {user_name} (<code>{telegram_id}</code>)\n"
+            f"🧾 Заказ: <code>{payment.order_id if payment else payment_id}</code>\n"
             f"📦 Тариф: {plan} / {months} мес.\n"
-            f"💵 Сумма: {amount} руб.",
+            f"💵 Сумма: {paid_str} руб."
         )
+        if payment and payment.provider_status:
+            admin_text += f"\n📡 Platega: {payment.provider_status}"
+        await bot.send_message(config.ADMIN_NOTIFY_ID, admin_text)
     except Exception as e:
         logger.warning("Admin notify failed: %s", e)
 
@@ -293,7 +226,9 @@ async def _process_successful_payment(
 async def _create_vpn_and_notify(
     bot: Bot, telegram_id: int, first_name: str, last_name: str,
     sub_id_db: int, months: int, days: int,
-    plan_name: str, amount: float
+    plan_name: str, amount: float,
+    order_id: str | None = None,
+    payment_db_id: int | None = None,
 ):
     """Создать VPN клиента и отправить ключ пользователю"""
     plan_config = None
@@ -306,9 +241,19 @@ async def _create_vpn_and_notify(
             plan_key = sub.plan.value if sub.plan else "BASIC"
             plan_config = PLANS.get(plan_key, PLANS["BASIC"])
 
-    limit_ip = plan_config["limit_ip"] if plan_config else 3
-    trial_days = PLANS.get("FREE", {}).get("days", 3) if days > 0 else 0
-    xui_months = max(months, 1) if not trial_days else 1
+    sub = None
+    is_trial = days > 0
+    if is_trial:
+        free_cfg = PLANS["FREE"]
+        limit_ip = free_cfg["limit_ip"]
+        traffic_gb = free_cfg["traffic_gb"]
+        trial_days = free_cfg["days"]
+        xui_months = 0
+    else:
+        limit_ip = plan_config["limit_ip"] if plan_config else 3
+        traffic_gb = plan_config.get("traffic_gb", 0) if plan_config else 0
+        trial_days = 0
+        xui_months = max(months, 1)
 
     try:
         vpn_data = await xui.add_client(
@@ -318,7 +263,8 @@ async def _create_vpn_and_notify(
             telegram_id=telegram_id,
             months=xui_months,
             limit_ip=limit_ip,
-            traffic_gb=plan_config.get("traffic_gb", 0) if plan_config else 0,
+            traffic_gb=traffic_gb,
+            days=trial_days,
         )
 
         # Строим ключ (vless sub-link)
@@ -338,6 +284,7 @@ async def _create_vpn_and_notify(
                     vpn_key=sub_url,
                     inbound_id=inbound_id,
                     days=trial_days or days,
+                    traffic_gb=traffic_gb if is_trial else 0,
                 )
 
         if trial_days or days > 0:
@@ -345,13 +292,37 @@ async def _create_vpn_and_notify(
         else:
             period_text = MONTHS_LABELS.get(months, f"{months} мес.")
 
+        trial_notice = ""
+        if is_trial:
+            trial_notice = (
+                f"\n\n💡 <b>Пробный период — {trial_days or days} дня.</b>\n"
+                "После окончания доступ закроется, если не оформить подписку.\n"
+                "Нажми «Купить подписку» — от 250 ₽/мес."
+            )
+
+        receipt_block = ""
+        expires_str = ""
+        if sub and sub.expires_at:
+            expires_str = sub.expires_at.strftime("%d.%m.%Y")
+        if not is_trial and amount > 0:
+            receipt_block = (
+                f"\n━━━━━━━━━━━━━━━━━\n"
+                f"🧾 <b>Чек оплаты</b>\n"
+                f"Заказ: <code>{order_id or '—'}</code>\n"
+                f"Сумма: <b>{amount:.0f} ₽</b>\n"
+                f"Период: <b>{period_text}</b>\n"
+                f"Действует до: <b>{expires_str}</b>\n"
+                f"━━━━━━━━━━━━━━━━━\n"
+            )
+
         text = f"""
 🎉 <b>VPN готов к работе!</b>
 
 📦 Тариф: <b>{plan_name}</b>
 ⏱ Период: <b>{period_text}</b>
 📱 Устройств: <b>{limit_ip}</b>
-
+{"📊 Трафик: <b>" + str(traffic_gb) + " ГБ</b>" if is_trial and traffic_gb else ""}
+{receipt_block}
 🔗 <b>Ссылка для подключения:</b>
 <code>{sub_url}</code>
 
@@ -360,10 +331,14 @@ async def _create_vpn_and_notify(
 • 🍎 iPhone: Happ или V2Box
 • 💻 ПК: Nekoray
 
-<i>Нажми на ссылку, чтобы скопировать 👆</i>
+<i>Нажми на ссылку, чтобы скопировать 👆</i>{trial_notice}
 """
 
+        from bot.keyboards.webapp import cabinet_button, is_miniapp_available
+
         builder = InlineKeyboardBuilder()
+        if is_trial and is_miniapp_available():
+            builder.row(cabinet_button("💳 Купить подписку"))
         builder.row(
             InlineKeyboardButton(text="📖 Инструкции", callback_data="instructions"),
             InlineKeyboardButton(text="👤 Аккаунт", callback_data="account"),
@@ -373,7 +348,14 @@ async def _create_vpn_and_notify(
         )
 
         await bot.send_message(telegram_id, text, reply_markup=builder.as_markup())
-        logger.info(f"✅ VPN issued to {telegram_id}: {vpn_data['email']}")
+        logger.info("VPN issued to %s: %s", telegram_id, vpn_data["email"])
+
+        if payment_db_id:
+            async with async_session() as session:
+                pay_repo = PaymentRepo(session)
+                payment = await pay_repo.get_by_id(payment_db_id)
+                if payment:
+                    await pay_repo.mark_fulfilled(payment)
 
     except Exception as e:
         logger.error(f"VPN creation error for {telegram_id}: {e}")
@@ -460,48 +442,9 @@ async def platega_webhook(request: Request) -> web.Response:
     """Webhook обработчик Platega платежей"""
     try:
         body = await request.json()
-        logger.info("Platega webhook: status=%s", body.get("status"))
-
-        event = parse_platega_webhook(body)
-        if not event:
-            return web.json_response({"ok": True, "skipped": True})
-
         bot: Bot = request.app["bot"]
-
-        async with async_session() as session:
-            pay_repo = PaymentRepo(session)
-            user_repo = UserRepo(session)
-
-            payment = None
-            if event.get("order_id"):
-                payment = await pay_repo.get_by_order_id(event["order_id"])
-            if not payment and event.get("transaction_id"):
-                payment = await pay_repo.get_by_payment_ref(event["transaction_id"])
-
-            if not payment:
-                logger.warning("Platega webhook: payment not found %s", event)
-                return web.json_response({"ok": True, "skipped": True})
-
-            user = await user_repo.get_by_id(payment.user_id)
-            telegram_id = int(event["telegram_id"]) if event.get("telegram_id") else (
-                user.telegram_id if user else 0
-            )
-            if not telegram_id:
-                logger.warning("Platega webhook: telegram_id missing")
-                return web.json_response({"ok": True, "skipped": True})
-
-        await _process_successful_payment(
-            bot=bot,
-            payment_id=payment.order_id or event.get("order_id") or event.get("transaction_id"),
-            telegram_id=telegram_id,
-            plan=event.get("plan") or payment.plan or "BASIC",
-            months=event.get("months") or payment.months or 1,
-            amount=event.get("amount") or payment.amount or 0,
-            subscription_id=event.get("subscription_id") or payment.subscription_id or 0,
-        )
-
-        return web.json_response({"ok": True})
-
+        result = await process_webhook(body, bot)
+        return web.json_response(result)
     except Exception as e:
         logger.error("Platega webhook error: %s", e)
         return web.json_response({"error": "processing failed"}, status=500)

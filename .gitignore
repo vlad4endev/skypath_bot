@@ -1,4 +1,6 @@
 .env
+.env.test
+data/nocodb_export/*.csv
 docker-compose.override.yml
 node_modules/
 dist/
