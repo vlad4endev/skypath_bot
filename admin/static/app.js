@@ -48,7 +48,6 @@ async function checkAuth() {
 const PAGES = {
   dashboard: { title: 'Аналитика', icon: '📊' },
   users: { title: 'Пользователи', icon: '👥' },
-  subscriptions: { title: 'Подписки', icon: '🔑' },
   payments: { title: 'Платежи', icon: '💰' },
   promos: { title: 'Промокоды', icon: '🎟️' },
 };
@@ -70,7 +69,6 @@ async function loadPage(page) {
   switch (page) {
     case 'dashboard': return loadDashboard();
     case 'users': return loadUsers();
-    case 'subscriptions': return loadSubscriptions();
     case 'payments': return loadPayments();
     case 'promos': return loadPromos();
   }
@@ -152,51 +150,166 @@ async function loadUsers(page = usersPage) {
   const banned = document.getElementById('users-banned')?.value || '';
   const data = await api(`/users?page=${page}&search=${encodeURIComponent(search)}&banned=${banned}`);
   const tbody = document.getElementById('users-tbody');
-  tbody.innerHTML = data.items.map(u => `
-    <tr>
+  tbody.innerHTML = data.items.map(u => {
+    const sub = u.subscription || {};
+    return `
+    <tr class="${u.is_banned ? 'row-banned' : ''}">
       <td>${u.id}</td>
       <td class="mono">${u.telegram_id}</td>
       <td>${u.username ? '@' + u.username : '—'}</td>
-      <td>${esc(u.full_name)}</td>
-      <td>${statusBadge(u.is_banned ? 'ЗАБЛОКИРОВАН' : 'OK')}</td>
-      <td>${fmtDate(u.created_at)}</td>
-      <td>${fmtDate(u.last_seen)}</td>
+      <td>${esc(u.full_name)}${u.is_banned ? '<span class="ban-tag">бан</span>' : ''}</td>
+      <td>${sub.plan ? `<span class="badge badge-accent">${sub.plan}</span>` : '—'}</td>
+      <td>${sub.status ? subStatusBadge(sub) : '<span class="text-muted-sm">нет</span>'}</td>
+      <td>${fmtExpiry(sub)}</td>
       <td class="actions">
         <button class="btn btn-ghost btn-sm" onclick="viewUser(${u.id})">Открыть</button>
         <button class="btn btn-sm ${u.is_banned ? 'btn-success' : 'btn-danger'}" onclick="toggleBan(${u.id}, ${!u.is_banned})">${u.is_banned ? 'Разбан' : 'Бан'}</button>
       </td>
-    </tr>
-  `).join('') || '<tr><td colspan="8" class="empty">Нет пользователей</td></tr>';
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="empty">Нет пользователей</td></tr>';
   renderPagination('users-pagination', data, loadUsers);
 }
 
-async function viewUser(id) {
-  const u = await api(`/users/${id}`);
-  showModal(`
-    <div class="modal-header"><h3>${esc(u.full_name)} <span class="mono">#${u.telegram_id}</span></h3><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
+function userInitials(u, tg) {
+  const name = (tg?.first_name || u.first_name || u.full_name || '?').trim();
+  const parts = name.split(/\s+/);
+  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
+}
+
+function buildUserCardHtml(u) {
+  const cur = u.subscription || {};
+  const tg = u.telegram_profile || {};
+  const st = u.stats || {};
+  const displayName = [tg.first_name || u.first_name, tg.last_name || u.last_name].filter(Boolean).join(' ') || u.full_name;
+  const username = tg.username || u.username;
+  const photoHtml = `<div class="user-avatar-wrap" id="user-photo-wrap">
+    <div class="user-avatar-fallback">${userInitials(u, tg)}</div>
+  </div>`;
+
+  const tgWarn = !tg.available && tg.error
+    ? `<div class="tg-warn">⚠️ Telegram: ${esc(tg.error)} — пользователь мог не писать боту</div>` : '';
+
+  return `
+    <div class="modal-header">
+      <h3>Карточка клиента</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button>
+    </div>
     <div class="modal-body">
+      ${tgWarn}
+      <div class="user-card-header">
+        ${photoHtml}
+        <div class="user-card-info">
+          <h3>${esc(displayName)} ${u.is_banned ? '<span class="ban-tag">ЗАБЛОКИРОВАН</span>' : ''}</h3>
+          <div class="user-card-meta">
+            <span class="mono">${u.telegram_id}</span>
+            ${username ? ` · <a href="https://t.me/${username}" target="_blank" rel="noopener">@${username}</a>` : ''}
+            ${tg.is_premium ? ' · <span class="premium-badge">Premium</span>' : ''}
+          </div>
+          ${tg.bio ? `<div class="user-card-bio">${esc(tg.bio)}</div>` : ''}
+          <div class="user-card-tags">
+            ${cur.plan ? `<span class="badge badge-accent">${cur.plan}</span>` : ''}
+            ${cur.status ? subStatusBadge(cur) : ''}
+            ${u.language_code || tg.language_code ? `<span class="badge badge-muted">${tg.language_code || u.language_code}</span>` : ''}
+            ${tg.profile_link ? `<a class="btn btn-ghost btn-sm" href="${tg.profile_link}" target="_blank" rel="noopener">Открыть в Telegram</a>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="user-mini-stats">
+        <div class="user-mini-stat"><div class="val">${fmtMoney(st.total_spent || 0)}</div><div class="lbl">Потрачено</div></div>
+        <div class="user-mini-stat"><div class="val">${st.payments_succeeded || 0}</div><div class="lbl">Оплат</div></div>
+        <div class="user-mini-stat"><div class="val">${st.referrals_count || 0}</div><div class="lbl">Рефералов</div></div>
+        <div class="user-mini-stat"><div class="val">${cur.days_left != null && !subIsExpired(cur) ? cur.days_left + 'д' : '—'}</div><div class="lbl">Осталось</div></div>
+      </div>
+
+      <div class="section-title">Аккаунт в боте</div>
       <div class="detail-grid">
-        <div class="detail-item"><label>ID</label><span>${u.id}</span></div>
-        <div class="detail-item"><label>Username</label><span>${u.username ? '@' + u.username : '—'}</span></div>
+        <div class="detail-item"><label>ID в БД</label><span>${u.id}</span></div>
         <div class="detail-item"><label>Регистрация</label><span>${fmtDate(u.created_at)}</span></div>
         <div class="detail-item"><label>Последний визит</label><span>${fmtDate(u.last_seen)}</span></div>
-        <div class="detail-item"><label>Реферер</label><span>${u.referrer_id || '—'}</span></div>
-        <div class="detail-item"><label>Статус</label><span>${u.is_banned ? '🔴 Заблокирован' : '🟢 Активен'}</span></div>
+        <div class="detail-item"><label>Реферер (tg)</label><span class="mono">${u.referrer_id || '—'}</span></div>
+        <div class="detail-item"><label>Текущий план</label><span>${cur.plan || '—'}</span></div>
+        <div class="detail-item"><label>Окончание подписки</label><span>${fmtExpiry(cur)}</span></div>
       </div>
-      <h4 style="margin:16px 0 8px">Подписки (${u.subscriptions.length})</h4>
-      ${u.subscriptions.length ? `<table><thead><tr><th>План</th><th>Статус</th><th>До</th><th>Дней</th></tr></thead><tbody>
-        ${u.subscriptions.map(s => `<tr><td>${s.plan}</td><td>${statusBadge(s.status)}</td><td>${fmtDate(s.expires_at)}</td><td>${s.days_left}</td></tr>`).join('')}
-      </tbody></table>` : '<p class="empty">Нет подписок</p>'}
-      <h4 style="margin:16px 0 8px">Платежи (${u.payments.length})</h4>
-      ${u.payments.length ? `<table><thead><tr><th>Сумма</th><th>План</th><th>Статус</th><th>Дата</th></tr></thead><tbody>
-        ${u.payments.map(p => `<tr><td>${fmtMoney(p.paid_amount || p.amount)}</td><td>${p.plan}/${p.months}м</td><td>${paymentBadge(p.status)}</td><td>${fmtDate(p.paid_at || p.created_at)}</td></tr>`).join('')}
-      </tbody></table>` : '<p class="empty">Нет платежей</p>'}
+
+      ${tg.available ? `
+      <div class="section-title">Профиль Telegram (live)</div>
+      <div class="detail-grid">
+        <div class="detail-item"><label>Имя в TG</label><span>${esc(tg.first_name || '—')} ${esc(tg.last_name || '')}</span></div>
+        <div class="detail-item"><label>Username в TG</label><span>${tg.username ? '@' + tg.username : '—'}</span></div>
+        <div class="detail-item"><label>Язык</label><span>${tg.language_code || '—'}</span></div>
+        <div class="detail-item"><label>Premium</label><span>${tg.is_premium ? '✅ Да' : 'Нет'}</span></div>
+      </div>` : ''}
+
+      <div class="section-title">Подписки (${u.subscriptions.length})</div>
+      ${u.subscriptions.length ? `<div class="table-wrap"><table><thead><tr>
+        <th>ID</th><th>План</th><th>Статус</th><th>Начало</th><th>Окончание</th><th>Мес.</th><th>Устр.</th><th>VPN</th><th></th>
+      </tr></thead><tbody>
+        ${u.subscriptions.map(s => `<tr>
+          <td>${s.id}</td>
+          <td><span class="badge badge-accent">${s.plan}</span></td>
+          <td>${subStatusBadge(s)}</td>
+          <td>${fmtDate(s.started_at)}</td>
+          <td>${fmtExpiry(s)}</td>
+          <td>${s.months_paid || '—'}</td>
+          <td>${s.limit_ip}</td>
+          <td>${s.vpn_key ? '✅' : '—'}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="closeModal();editSub(${s.id})">✏️</button></td>
+        </tr>`).join('')}
+      </tbody></table></div>` : '<p class="empty">Нет подписок</p>'}
+
+      <div class="section-title">Платежи (${st.payments_total || u.payments.length})</div>
+      ${u.payments.length ? `<div class="table-wrap"><table><thead><tr>
+        <th>ID</th><th>Сумма</th><th>План</th><th>Мес.</th><th>Статус</th><th>VPN</th><th>Дата</th>
+      </tr></thead><tbody>
+        ${u.payments.map(p => `<tr>
+          <td>${p.id}</td>
+          <td>${fmtMoney(p.paid_amount || p.amount)}</td>
+          <td>${p.plan || '—'}</td>
+          <td>${p.months}</td>
+          <td>${paymentBadge(p.status)}</td>
+          <td>${p.is_fulfilled ? '🔑' : (p.status === 'succeeded' ? '⚠️' : '—')}</td>
+          <td>${fmtDate(p.paid_at || p.created_at)}</td>
+        </tr>`).join('')}
+      </tbody></table></div>` : '<p class="empty">Нет платежей</p>'}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Закрыть</button>
+      <button class="btn btn-${u.is_banned ? 'success' : 'ghost'}" onclick="toggleBan(${u.id}, ${!u.is_banned});closeModal()">${u.is_banned ? 'Разбанить' : 'Заблокировать'}</button>
       <button class="btn btn-danger" onclick="deleteUser(${u.id})">Удалить</button>
-    </div>
-  `, 'modal-lg');
+    </div>`;
+}
+
+async function loadUserPhoto(userId) {
+  try {
+    const res = await fetch(`/admin/api/users/${userId}/photo`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'same-origin',
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const wrap = document.getElementById('user-photo-wrap');
+    if (!wrap) return;
+    const img = document.createElement('img');
+    img.className = 'user-avatar';
+    img.src = URL.createObjectURL(blob);
+    img.alt = '';
+    wrap.innerHTML = '';
+    wrap.appendChild(img);
+  } catch { /* keep initials fallback */ }
+}
+
+async function viewUser(id) {
+  const overlay = document.getElementById('modal-overlay');
+  overlay.innerHTML = `<div class="modal modal-xl"><div class="modal-body"><p class="empty">Загрузка профиля из Telegram...</p></div></div>`;
+  overlay.classList.remove('hidden');
+  try {
+    const u = await api(`/users/${id}`);
+    showModal(buildUserCardHtml(u), 'modal-xl');
+    if (u.telegram_profile?.has_photo) loadUserPhoto(id);
+  } catch (e) {
+    showModal(`<div class="modal-header"><h3>Ошибка</h3></div><div class="modal-body"><p class="error-msg">${esc(e.message)}</p></div>`, 'modal-lg');
+  }
 }
 
 async function toggleBan(id, banned) {
@@ -212,79 +325,7 @@ async function deleteUser(id) {
   loadUsers();
 }
 
-// ── Subscriptions ────────────────────────────────────────────
-
-let subsPage = 1;
-
-async function loadSubscriptions(page = subsPage) {
-  subsPage = page;
-  const search = document.getElementById('subs-search')?.value || '';
-  const status = document.getElementById('subs-status')?.value || '';
-  const plan = document.getElementById('subs-plan')?.value || '';
-  const data = await api(`/subscriptions?page=${page}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&plan=${plan}`);
-  const tbody = document.getElementById('subs-tbody');
-  tbody.innerHTML = data.items.map(s => `
-    <tr>
-      <td>${s.id}</td>
-      <td class="mono">${s.telegram_id}</td>
-      <td><span class="badge badge-accent">${s.plan}</span></td>
-      <td>${statusBadge(s.status)}</td>
-      <td>${fmtDate(s.expires_at)}</td>
-      <td>${s.days_left}д</td>
-      <td>${s.vpn_key ? '✅' : '—'}</td>
-      <td class="actions">
-        <button class="btn btn-ghost btn-sm" onclick="editSub(${s.id})">Изменить</button>
-        <button class="btn btn-success btn-sm" onclick="extendSub(${s.id})">+30д</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteSub(${s.id})">✕</button>
-      </td>
-    </tr>
-  `).join('') || '<tr><td colspan="8" class="empty">Нет подписок</td></tr>';
-  renderPagination('subs-pagination', data, loadSubscriptions);
-}
-
-function showCreateSub() {
-  const statuses = (config.subscription_statuses || []).map(s => `<option value="${s}">${s}</option>`).join('');
-  const plans = (config.plan_types || []).map(p => `<option value="${p}">${p}</option>`).join('');
-  showModal(`
-    <div class="modal-header"><h3>Новая подписка</h3><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
-    <div class="modal-body">
-      <div class="form-group"><label>Telegram ID *</label><input id="new-sub-tg" type="number" placeholder="123456789"></div>
-      <div class="form-row">
-        <div class="form-group"><label>План</label><select id="new-sub-plan">${plans}</select></div>
-        <div class="form-group"><label>Дней</label><input id="new-sub-days" type="number" value="30"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Статус</label><select id="new-sub-status">${statuses}</select></div>
-        <div class="form-group"><label>Устройств</label><input id="new-sub-ip" type="number" value="3"></div>
-      </div>
-      <div class="form-group"><label>VPN ключ (опционально)</label><textarea id="new-sub-key" rows="2" placeholder="vless://..."></textarea></div>
-      <div id="create-sub-error" class="error-msg hidden"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="createSub()">Создать</button>
-    </div>
-  `);
-}
-
-async function createSub() {
-  try {
-    await api('/subscriptions', { method: 'POST', body: JSON.stringify({
-      telegram_id: +document.getElementById('new-sub-tg').value,
-      plan: document.getElementById('new-sub-plan').value,
-      days: +document.getElementById('new-sub-days').value,
-      status: document.getElementById('new-sub-status').value,
-      limit_ip: +document.getElementById('new-sub-ip').value,
-      vpn_key: document.getElementById('new-sub-key').value || null,
-    })});
-    closeModal();
-    loadSubscriptions();
-  } catch (e) {
-    const el = document.getElementById('create-sub-error');
-    el.textContent = e.message;
-    el.classList.remove('hidden');
-  }
-}
+// ── Subscription edit (from user card) ───────────────────────
 
 async function editSub(id) {
   const s = await api(`/subscriptions/${id}`);
@@ -334,7 +375,7 @@ async function saveSub(id) {
     if (months) body.extend_months = +months;
     await api(`/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
     closeModal();
-    loadSubscriptions();
+    loadUsers();
   } catch (e) {
     const el = document.getElementById('edit-sub-error');
     el.textContent = e.message;
@@ -342,15 +383,11 @@ async function saveSub(id) {
   }
 }
 
-async function extendSub(id) {
-  await api(`/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify({ extend_days: 30 }) });
-  loadSubscriptions();
-}
-
 async function deleteSub(id) {
   if (!confirm('Удалить подписку?')) return;
   await api(`/subscriptions/${id}`, { method: 'DELETE' });
-  loadSubscriptions();
+  closeModal();
+  loadUsers();
 }
 
 // ── Payments ─────────────────────────────────────────────────
@@ -539,9 +576,32 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s || 
 function statusBadge(status) {
   const map = {
     'АКТИВНА': 'success', 'ПРОБНЫЙ ПЕРИОД': 'accent', 'ОЖИДАЕТ ОПЛАТУ': 'warning',
-    'ИСТЕКЛА': 'muted', 'ЗАБЛОКИРОВАНА': 'danger', 'OK': 'success', 'ВЫКЛ': 'muted', 'ИСТЁК': 'warning',
+    'ИСТЕКЛА': 'danger', 'ЗАБЛОКИРОВАНА': 'danger', 'OK': 'success', 'ВЫКЛ': 'muted', 'ИСТЁК': 'danger',
   };
   return `<span class="badge badge-${map[status] || 'muted'}">${status}</span>`;
+}
+
+function subIsExpired(sub) {
+  if (!sub || !sub.status) return false;
+  if (sub.is_expired) return true;
+  if (sub.status === 'ИСТЕКЛА' || sub.status === 'ЗАБЛОКИРОВАНА') return true;
+  if (sub.expires_at && new Date(sub.expires_at) < new Date()) return true;
+  return false;
+}
+
+function subStatusBadge(sub) {
+  if (!sub || !sub.status) return '<span class="text-muted-sm">нет</span>';
+  if (subIsExpired(sub)) return '<span class="badge badge-danger">Истекло</span>';
+  return statusBadge(sub.status);
+}
+
+function fmtExpiry(sub) {
+  if (!sub || !sub.expires_at) return '<span class="text-muted-sm">—</span>';
+  if (subIsExpired(sub)) {
+    return `<span class="text-expired">Истекло · ${fmtDate(sub.expires_at)}</span>`;
+  }
+  const days = sub.days_left != null ? ` · ${sub.days_left}д` : '';
+  return `${fmtDate(sub.expires_at)}${days}`;
 }
 
 function paymentBadge(status) {
@@ -581,12 +641,7 @@ function showApp() {
 }
 
 function buildFilters() {
-  const statuses = (config.subscription_statuses || []).map(s => `<option value="${s}">${s}</option>`).join('');
-  const plans = (config.plan_types || []).map(p => `<option value="${p}">${p}</option>`).join('');
   const payStatuses = (config.payment_statuses || []).map(s => `<option value="${s}">${s}</option>`).join('');
-
-  document.getElementById('subs-status').innerHTML = '<option value="">Все статусы</option>' + statuses;
-  document.getElementById('subs-plan').innerHTML = '<option value="">Все планы</option>' + plans;
   document.getElementById('payments-status').innerHTML = '<option value="">Все статусы</option>' + payStatuses;
 }
 
@@ -611,14 +666,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('logout-btn').onclick = logout;
 
   // Search debounce
-  ['users-search', 'subs-search', 'payments-search'].forEach(id => {
+  ['users-search', 'payments-search'].forEach(id => {
     const el = document.getElementById(id);
     if (el) {
       let t;
       el.oninput = () => { clearTimeout(t); t = setTimeout(() => loadPage(currentPage), 400); };
     }
   });
-  ['users-banned', 'subs-status', 'subs-plan', 'payments-status', 'payments-unfulfilled'].forEach(id => {
+  ['users-banned', 'payments-status', 'payments-unfulfilled'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.onchange = () => loadPage(currentPage);
   });

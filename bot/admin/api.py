@@ -11,6 +11,7 @@ from aiohttp import web
 
 from bot.admin.auth import AdminAuth, verify_password
 from bot.admin.repository import AdminRepo
+from bot.admin.telegram_profile import download_profile_photo, fetch_telegram_profile
 from bot.config import Config, PLANS, MONTHS_LABELS
 from database.engine import async_session
 from database.models import (
@@ -33,8 +34,8 @@ def _dt(val: datetime | None) -> str | None:
     return val.isoformat() if val else None
 
 
-def _user_json(u: User) -> dict[str, Any]:
-    return {
+def _user_json(u: User, subscription: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = {
         "id": u.id,
         "telegram_id": u.telegram_id,
         "username": u.username,
@@ -47,6 +48,9 @@ def _user_json(u: User) -> dict[str, Any]:
         "created_at": _dt(u.created_at),
         "last_seen": _dt(u.last_seen),
     }
+    if subscription is not None:
+        data["subscription"] = subscription
+    return data
 
 
 def _sub_json(s: Subscription) -> dict[str, Any]:
@@ -70,6 +74,11 @@ def _sub_json(s: Subscription) -> dict[str, Any]:
         "traffic_gb": s.traffic_gb,
         "days_left": s.days_left,
         "is_active": s.is_active,
+        "is_expired": (
+            s.status == SubscriptionStatus.EXPIRED
+            or s.status == SubscriptionStatus.BLOCKED
+            or (s.expires_at is not None and s.expires_at < datetime.utcnow())
+        ),
         "vpn_disabled_at": _dt(s.vpn_disabled_at),
         "created_at": _dt(s.created_at),
         "updated_at": _dt(s.updated_at),
@@ -224,7 +233,10 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
                 page=page, per_page=per_page, search=search, banned=banned,
             )
         return _json({
-            "items": [_user_json(u) for u in result["items"]],
+            "items": [
+                _user_json(row["user"], row["subscription"])
+                for row in result["items"]
+            ],
             "total": result["total"],
             "page": result["page"],
             "per_page": result["per_page"],
@@ -232,15 +244,57 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
 
     async def users_detail(request: web.Request) -> web.Response:
         user_id = int(request.match_info["user_id"])
+        bot = request.app.get("bot")
+        async with async_session() as session:
+            repo = AdminRepo(session)
+            user = await repo.get_user_detail(user_id)
+            if not user:
+                return _error("User not found", 404)
+            primary = repo.subscription_summary(
+                repo._pick_primary_subscription(list(user.subscriptions))
+            )
+            stats = await repo.get_user_stats(user)
+            subs_sorted = sorted(
+                user.subscriptions,
+                key=lambda s: s.created_at,
+                reverse=True,
+            )
+            payments_sorted = sorted(
+                user.payments,
+                key=lambda p: p.created_at,
+                reverse=True,
+            )
+            data = _user_json(user, primary)
+            data["stats"] = stats
+            data["subscriptions"] = [_sub_json(s) for s in subs_sorted]
+            data["payments"] = [_payment_json(p) for p in payments_sorted[:30]]
+            data["telegram_profile"] = (
+                await fetch_telegram_profile(bot, user.telegram_id)
+                if bot else {"available": False, "error": "bot_unavailable"}
+            )
+            if data["telegram_profile"].get("has_photo"):
+                data["telegram_profile"]["photo_url"] = (
+                    f"/admin/api/users/{user_id}/photo"
+                )
+        return _json(data)
+
+    async def users_photo(request: web.Request) -> web.Response:
+        user_id = int(request.match_info["user_id"])
+        bot = request.app.get("bot")
+        if not bot:
+            return _error("Bot not available", 503)
         async with async_session() as session:
             repo = AdminRepo(session)
             user = await repo.get_user_detail(user_id)
         if not user:
             return _error("User not found", 404)
-        data = _user_json(user)
-        data["subscriptions"] = [_sub_json(s) for s in user.subscriptions]
-        data["payments"] = [_payment_json(p) for p in user.payments[:20]]
-        return _json(data)
+        downloaded = await download_profile_photo(bot, user.telegram_id)
+        if not downloaded:
+            return _error("Photo not found", 404)
+        data, content_type = downloaded
+        return web.Response(body=data, content_type=content_type, headers={
+            "Cache-Control": "private, max-age=3600",
+        })
 
     async def users_update(request: web.Request) -> web.Response:
         user_id = int(request.match_info["user_id"])
@@ -520,6 +574,7 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         web.get("/admin/api/config", config_plans),
         web.get("/admin/api/users", users_list),
         web.get("/admin/api/users/{user_id}", users_detail),
+        web.get("/admin/api/users/{user_id}/photo", users_photo),
         web.patch("/admin/api/users/{user_id}", users_update),
         web.delete("/admin/api/users/{user_id}", users_delete),
         web.get("/admin/api/subscriptions", subs_list),

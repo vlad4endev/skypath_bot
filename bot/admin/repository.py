@@ -174,6 +174,63 @@ class AdminRepo:
 
     # ── Users ──────────────────────────────────────────────────
 
+    @staticmethod
+    def _pick_primary_subscription(subs: list[Subscription]) -> Subscription | None:
+        if not subs:
+            return None
+        active = [s for s in subs if s.is_active]
+        if active:
+            return max(active, key=lambda s: s.expires_at or datetime.min)
+        with_expiry = [s for s in subs if s.expires_at]
+        if with_expiry:
+            return max(with_expiry, key=lambda s: s.expires_at)
+        return max(subs, key=lambda s: s.created_at)
+
+    @staticmethod
+    def subscription_summary(sub: Subscription | None) -> dict[str, Any]:
+        if not sub:
+            return {
+                "plan": None,
+                "status": None,
+                "expires_at": None,
+                "days_left": 0,
+                "is_active": False,
+                "is_expired": False,
+            }
+        now = datetime.utcnow()
+        is_expired = (
+            sub.status == SubscriptionStatus.EXPIRED
+            or (sub.expires_at is not None and sub.expires_at < now)
+            or sub.status == SubscriptionStatus.BLOCKED
+        )
+        return {
+            "plan": sub.plan.value,
+            "status": sub.status.value,
+            "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+            "days_left": sub.days_left,
+            "is_active": sub.is_active,
+            "is_expired": is_expired,
+            "subscription_id": sub.id,
+        }
+
+    async def _subscription_summaries_by_telegram(
+        self, telegram_ids: list[int]
+    ) -> dict[int, dict[str, Any]]:
+        if not telegram_ids:
+            return {}
+        result = await self.session.execute(
+            select(Subscription)
+            .where(Subscription.telegram_id.in_(telegram_ids))
+            .order_by(Subscription.created_at.desc())
+        )
+        subs_by_tg: dict[int, list[Subscription]] = {}
+        for sub in result.scalars().all():
+            subs_by_tg.setdefault(sub.telegram_id, []).append(sub)
+        return {
+            tg_id: self.subscription_summary(self._pick_primary_subscription(subs))
+            for tg_id, subs in subs_by_tg.items()
+        }
+
     async def list_users(
         self,
         *,
@@ -211,8 +268,21 @@ class AdminRepo:
         result = await self.session.execute(
             q.order_by(User.created_at.desc()).offset(offset).limit(limit)
         )
-        users = result.scalars().all()
-        return {"items": users, "total": total, "page": page, "per_page": limit}
+        users = list(result.scalars().all())
+        sub_map = await self._subscription_summaries_by_telegram(
+            [u.telegram_id for u in users]
+        )
+        items = [
+            {
+                "user": user,
+                "subscription": sub_map.get(
+                    user.telegram_id,
+                    self.subscription_summary(None),
+                ),
+            }
+            for user in users
+        ]
+        return {"items": items, "total": total, "page": page, "per_page": limit}
 
     async def get_user_detail(self, user_id: int) -> User | None:
         result = await self.session.execute(
@@ -221,6 +291,21 @@ class AdminRepo:
             .where(User.id == user_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_user_stats(self, user: User) -> dict[str, Any]:
+        payments = list(user.payments)
+        succeeded = [p for p in payments if p.status == PaymentStatus.SUCCEEDED]
+        total_paid = sum(p.paid_amount or p.amount for p in succeeded)
+        referrals = (await self.session.execute(
+            select(func.count(User.id)).where(User.referrer_id == user.telegram_id)
+        )).scalar() or 0
+        return {
+            "payments_total": len(payments),
+            "payments_succeeded": len(succeeded),
+            "total_spent": float(total_paid),
+            "referrals_count": referrals,
+            "subscriptions_total": len(user.subscriptions),
+        }
 
     async def get_user_by_telegram(self, telegram_id: int) -> User | None:
         result = await self.session.execute(

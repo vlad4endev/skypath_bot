@@ -2,19 +2,15 @@
 """Generate ADMIN_PASSWORD hash for .env file.
 
 Usage:
-  python scripts/gen_admin_password.py "your-secure-password"
-  python scripts/gen_admin_password.py "your-secure-password" --salt "custom-salt"
+  python3 scripts/gen_admin_password.py "your-secure-password"
+  python3 scripts/gen_admin_password.py "your-secure-password" --salt "custom-salt"
+
+On server (inside Docker):
+  docker compose exec bot python scripts/gen_admin_password.py "your-secure-password"
 """
 import argparse
 import hashlib
 import os
-import sys
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 def digest(password: str, salt: str) -> str:
