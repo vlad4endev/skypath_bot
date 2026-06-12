@@ -336,6 +336,58 @@ class AdminRepo:
         await self.session.commit()
         return True
 
+    async def list_users_for_xui_sync(
+        self,
+        *,
+        user_ids: list[int] | None = None,
+    ) -> list[tuple[User, Subscription | None]]:
+        q = select(User).options(selectinload(User.subscriptions)).order_by(User.id)
+        if user_ids:
+            q = q.where(User.id.in_(user_ids))
+        result = await self.session.execute(q)
+        users = list(result.scalars().unique().all())
+        return [
+            (user, self._pick_primary_subscription(list(user.subscriptions)))
+            for user in users
+        ]
+
+    async def apply_panel_client_to_subscription(
+        self,
+        sub_id: int,
+        *,
+        vpn_uuid: str | None,
+        vpn_email: str | None,
+        vpn_sub_id: str | None,
+        vpn_key: str | None,
+        inbound_id: int | None,
+        expires_at: datetime | None,
+        limit_ip: int,
+        traffic_gb: int,
+        status: SubscriptionStatus,
+    ) -> Subscription | None:
+        sub = await self.get_subscription(sub_id)
+        if not sub:
+            return None
+
+        sub.vpn_uuid = vpn_uuid
+        sub.vpn_email = vpn_email
+        sub.vpn_sub_id = vpn_sub_id
+        sub.vpn_key = vpn_key
+        if inbound_id:
+            sub.inbound_id = inbound_id
+        sub.expires_at = expires_at
+        sub.limit_ip = limit_ip
+        sub.traffic_gb = traffic_gb
+        sub.status = status
+        if status in (SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL):
+            sub.vpn_disabled_at = None
+            if not sub.started_at:
+                sub.started_at = datetime.utcnow()
+        sub.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(sub)
+        return sub
+
     # ── Subscriptions ──────────────────────────────────────────
 
     async def list_subscriptions(

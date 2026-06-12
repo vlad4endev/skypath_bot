@@ -99,6 +99,123 @@ async function loadDashboard() {
   renderChart('chart-revenue', 'Выручка (₽)', revenue.map(d => d.date), revenue.map(d => d.revenue), '#6366f1');
   renderChart('chart-users', 'Новые пользователи', users.map(d => d.date), users.map(d => d.count), '#22c55e');
   renderPlanChart('chart-plans', plans);
+  loadXuiStatus().catch(() => {});
+}
+
+// ── 3X-UI sync ───────────────────────────────────────────────
+
+async function loadXuiStatus() {
+  const el = document.getElementById('xui-panel-status');
+  if (!el) return;
+  try {
+    const data = await api('/xui/status');
+    el.innerHTML = `✅ Панель: ${data.inbounds_count} inbound · ${data.clients_count} клиентов`;
+    el.className = 'text-muted-sm';
+  } catch (e) {
+    el.innerHTML = `❌ Панель недоступна: ${esc(e.message)}`;
+    el.className = 'error-msg';
+  }
+}
+
+function showXuiSyncModal(userId = null) {
+  const title = userId ? `Синхронизация пользователя #${userId}` : 'Массовая синхронизация с 3X-UI';
+  showModal(`
+    <div class="modal-header">
+      <h3>${title}</h3>
+      <button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-muted);line-height:1.6;margin-bottom:16px">
+        Для каждого пользователя с VPN-подпиской запрашиваются данные из 3X-UI
+        (срок, лимиты, subId, email). Данные в БД обновляются.
+        Если клиента нет в панели — пользователь удаляется из БД вместе с платежами.
+      </p>
+      <label class="checkbox-row">
+        <input id="xui-sync-dry" type="checkbox">
+        <span>Только просмотр (dry run) — без изменений в БД</span>
+      </label>
+      <label class="checkbox-row">
+        <input id="xui-sync-delete" type="checkbox" checked>
+        <span>Удалять пользователей, отсутствующих в 3X-UI</span>
+      </label>
+      <div id="xui-sync-error" class="error-msg hidden"></div>
+      <div id="xui-sync-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Закрыть</button>
+      <button class="btn btn-primary" id="xui-sync-run-btn" onclick="runXuiSync(${userId || 'null'})">Запустить</button>
+    </div>
+  `, 'modal-lg');
+}
+
+async function runXuiSync(userId = null) {
+  const errEl = document.getElementById('xui-sync-error');
+  const resultEl = document.getElementById('xui-sync-result');
+  const btn = document.getElementById('xui-sync-run-btn');
+  const dryRun = document.getElementById('xui-sync-dry')?.checked;
+  const deleteMissing = document.getElementById('xui-sync-delete')?.checked;
+
+  errEl?.classList.add('hidden');
+  if (resultEl) resultEl.innerHTML = '<p class="empty">Синхронизация…</p>';
+  if (btn) btn.disabled = true;
+
+  try {
+    const body = { dry_run: !!dryRun, delete_missing: !!deleteMissing };
+    const path = userId ? `/users/${userId}/sync-xui` : '/xui/sync';
+    const data = await api(path, { method: 'POST', body: JSON.stringify(body) });
+    renderXuiSyncResult(data);
+    if (!dryRun) {
+      loadXuiStatus().catch(() => {});
+      if (currentPage === 'users') loadUsers();
+      if (currentPage === 'dashboard') loadDashboard();
+    }
+  } catch (e) {
+    if (errEl) {
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+    if (resultEl) resultEl.innerHTML = '';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderXuiSyncResult(data) {
+  const el = document.getElementById('xui-sync-result');
+  if (!el) return;
+
+  const actionLabel = {
+    updated: '✅ обновлён',
+    deleted: '🗑 удалён',
+    skipped: '⏭ пропущен',
+    error: '❌ ошибка',
+  };
+
+  const summary = `
+    <div class="sync-summary">
+      <span>Обработано: <b>${data.processed}</b></span>
+      <span>Обновлено: <b>${data.updated}</b></span>
+      <span>Удалено: <b>${data.deleted}</b></span>
+      <span>Пропущено: <b>${data.skipped}</b></span>
+      <span>Ошибок: <b>${data.errors}</b></span>
+      ${data.dry_run ? '<span class="badge badge-muted">dry run</span>' : ''}
+    </div>`;
+
+  const rows = (data.items || []).map(item => `
+    <tr>
+      <td>${item.user_id}</td>
+      <td class="mono">${item.telegram_id}</td>
+      <td>${actionLabel[item.action] || item.action}</td>
+      <td>${esc(item.message || '')}</td>
+    </tr>`).join('');
+
+  el.innerHTML = summary + `
+    <div class="table-wrap" style="margin-top:12px;max-height:320px;overflow:auto">
+      <table>
+        <thead><tr><th>User</th><th>Telegram</th><th>Действие</th><th>Детали</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="empty">Нет записей</td></tr>'}</tbody>
+      </table>
+    </div>`;
 }
 
 function renderChart(canvasId, label, labels, data, color) {
@@ -275,6 +392,7 @@ function buildUserCardHtml(u) {
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Закрыть</button>
+      <button class="btn btn-primary" onclick="closeModal();showXuiSyncModal(${u.id})">🔄 Синхр. 3X-UI</button>
       <button class="btn btn-${u.is_banned ? 'success' : 'ghost'}" onclick="toggleBan(${u.id}, ${!u.is_banned});closeModal()">${u.is_banned ? 'Разбанить' : 'Заблокировать'}</button>
       <button class="btn btn-danger" onclick="deleteUser(${u.id})">Удалить</button>
     </div>`;

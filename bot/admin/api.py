@@ -408,6 +408,80 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
             return _error("Subscription not found", 404)
         return _json({"ok": True})
 
+    # ── 3X-UI sync ─────────────────────────────────────────────
+
+    async def xui_status(request: web.Request) -> web.Response:
+        from bot.services.xui_sync import xui as xui_client
+
+        try:
+            status = await xui_client.get_server_status()
+            inbounds = await xui_client.list_inbounds()
+            clients = await xui_client.list_all_clients()
+        except Exception as e:
+            logger.error("xui_status failed: %s", e)
+            return _json({"ok": False, "error": str(e)}, status=502)
+
+        return _json({
+            "ok": True,
+            "panel": {
+                "host": config.XUI_HOST,
+                "sub_base_url": config.XUI_SUB_BASE_URL or config.xui_sub_url("…"),
+            },
+            "server": status,
+            "inbounds_count": len(inbounds),
+            "clients_count": len(clients),
+        })
+
+    async def xui_sync(request: web.Request) -> web.Response:
+        """Массовая синхронизация пользователей с 3X-UI."""
+        from bot.services.xui_sync import bulk_sync_from_xui
+
+        body = await _body(request)
+        dry_run = bool(body.get("dry_run"))
+        delete_missing = body.get("delete_missing", True)
+        user_ids = body.get("user_ids")
+        if user_ids is not None:
+            user_ids = [int(x) for x in user_ids]
+
+        try:
+            async with async_session() as session:
+                repo = AdminRepo(session)
+                result = await bulk_sync_from_xui(
+                    repo,
+                    dry_run=dry_run,
+                    delete_missing=bool(delete_missing),
+                    user_ids=user_ids,
+                )
+        except Exception as e:
+            logger.exception("xui_sync failed")
+            return _json({"ok": False, "error": str(e)}, status=502)
+
+        return _json(result.to_dict())
+
+    async def user_sync_xui(request: web.Request) -> web.Response:
+        """Синхронизация одного пользователя с 3X-UI."""
+        from bot.services.xui_sync import bulk_sync_from_xui
+
+        user_id = int(request.match_info["user_id"])
+        body = await _body(request)
+        dry_run = bool(body.get("dry_run"))
+        delete_missing = body.get("delete_missing", True)
+
+        try:
+            async with async_session() as session:
+                repo = AdminRepo(session)
+                result = await bulk_sync_from_xui(
+                    repo,
+                    dry_run=dry_run,
+                    delete_missing=bool(delete_missing),
+                    user_ids=[user_id],
+                )
+        except Exception as e:
+            logger.exception("user_sync_xui failed for %s", user_id)
+            return _json({"ok": False, "error": str(e)}, status=502)
+
+        return _json(result.to_dict())
+
     # ── Payments ───────────────────────────────────────────────
 
     async def payments_list(request: web.Request) -> web.Response:
@@ -577,6 +651,9 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         web.get("/admin/api/users/{user_id}/photo", users_photo),
         web.patch("/admin/api/users/{user_id}", users_update),
         web.delete("/admin/api/users/{user_id}", users_delete),
+        web.post("/admin/api/users/{user_id}/sync-xui", user_sync_xui),
+        web.get("/admin/api/xui/status", xui_status),
+        web.post("/admin/api/xui/sync", xui_sync),
         web.get("/admin/api/subscriptions", subs_list),
         web.get("/admin/api/subscriptions/{sub_id}", subs_detail),
         web.post("/admin/api/subscriptions", subs_create),

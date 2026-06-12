@@ -327,6 +327,124 @@ class XUIClient:
             "enabled": bool(client.get("enable", True)),
         }
 
+    def _parse_inbound_clients(self, inbound: dict[str, Any]) -> list[dict[str, Any]]:
+        inbound_id = int(inbound.get("id") or 0)
+        clients: list[dict[str, Any]] = []
+
+        settings_raw = inbound.get("settings")
+        if isinstance(settings_raw, str) and settings_raw.strip():
+            try:
+                settings = json.loads(settings_raw)
+            except json.JSONDecodeError:
+                settings = {}
+        elif isinstance(settings_raw, dict):
+            settings = settings_raw
+        else:
+            settings = {}
+
+        for client in settings.get("clients") or []:
+            if isinstance(client, dict) and client.get("email"):
+                clients.append({**client, "_inbound_id": inbound_id})
+
+        for stat in inbound.get("clientStats") or []:
+            if not isinstance(stat, dict):
+                continue
+            email = stat.get("email")
+            if not email:
+                continue
+            if any(c.get("email") == email for c in clients):
+                continue
+            clients.append({**stat, "_inbound_id": inbound_id})
+
+        return clients
+
+    async def list_all_clients(self) -> list[dict[str, Any]]:
+        """Все VPN-клиенты из inbounds (для массовой синхронизации)."""
+        inbounds = await self.list_inbounds()
+        result: list[dict[str, Any]] = []
+        for inbound in inbounds:
+            result.extend(self._parse_inbound_clients(inbound))
+        return result
+
+    async def build_client_index(self) -> dict[str, dict[str, Any]]:
+        """Индекс клиентов панели по email / subId / tgId / uuid."""
+        by_email: dict[str, dict[str, Any]] = {}
+        by_sub_id: dict[str, dict[str, Any]] = {}
+        by_tg_id: dict[int, dict[str, Any]] = {}
+        by_uuid: dict[str, dict[str, Any]] = {}
+
+        for client in await self.list_all_clients():
+            email = str(client.get("email") or "").strip()
+            if email and email not in by_email:
+                by_email[email] = client
+
+            sub_id = str(client.get("subId") or "").strip()
+            if sub_id and sub_id not in by_sub_id:
+                by_sub_id[sub_id] = client
+
+            tg_raw = client.get("tgId")
+            if tg_raw is not None and str(tg_raw).strip() != "":
+                try:
+                    tg_id = int(tg_raw)
+                except (TypeError, ValueError):
+                    tg_id = 0
+                if tg_id > 0 and tg_id not in by_tg_id:
+                    by_tg_id[tg_id] = client
+
+            client_uuid = str(client.get("id") or "").strip()
+            if client_uuid and client_uuid not in by_uuid:
+                by_uuid[client_uuid] = client
+
+        return {
+            "by_email": by_email,
+            "by_sub_id": by_sub_id,
+            "by_tg_id": by_tg_id,
+            "by_uuid": by_uuid,
+        }
+
+    async def find_panel_client(
+        self,
+        index: dict[str, dict[str, dict[str, Any]]],
+        *,
+        email: str | None = None,
+        sub_id: str | None = None,
+        telegram_id: int | None = None,
+        client_uuid: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Найти клиента в предзагруженном индексе, при email — уточнить через API."""
+        match: dict[str, Any] | None = None
+
+        if email:
+            match = index["by_email"].get(email.strip())
+        if match is None and sub_id:
+            match = index["by_sub_id"].get(sub_id.strip())
+        if match is None and telegram_id:
+            match = index["by_tg_id"].get(int(telegram_id))
+        if match is None and client_uuid:
+            match = index["by_uuid"].get(client_uuid.strip())
+
+        if match is None:
+            return None
+
+        client_email = str(match.get("email") or "").strip()
+        if not client_email:
+            return match
+
+        try:
+            fresh = await self.get_client(client_email)
+        except Exception as e:
+            logger.warning("find_panel_client: get_client(%s) failed: %s", client_email, e)
+            return match
+
+        if isinstance(fresh, dict) and "clients" in fresh:
+            clients = fresh.get("clients") or []
+            if clients and isinstance(clients[0], dict):
+                merged = {**clients[0], "_inbound_id": match.get("_inbound_id")}
+                return merged
+        if isinstance(fresh, dict):
+            return {**fresh, "_inbound_id": match.get("_inbound_id")}
+        return match
+
     async def get_servers_status(self, inbound_ids: dict[str, int]) -> list[dict[str, Any]]:
         """Статус серверов по inbound ID из панели."""
         try:
