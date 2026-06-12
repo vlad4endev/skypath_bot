@@ -9,8 +9,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme123}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5433:5432"
+    # Порт на хост не пробрасываем — бот ходит на postgres:5432 внутри сети Docker
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U vpnbot -d skypath"]
       interval: 10s
