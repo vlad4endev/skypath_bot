@@ -9,7 +9,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiogram.webhook.aiohttp_server import TokenBasedRequestHandler, setup_application
 from aiohttp import web
 
 from bot.config import Config
@@ -86,16 +86,20 @@ def create_app(config: Config) -> web.Application:
     app["bot"] = bot
     app["config"] = config
 
-    SimpleRequestHandler(dispatcher=dp, bot=bot).register(
-        app, path=f"/webhook/{config.BOT_TOKEN}"
-    )
+    # Platega до /webhook/{bot_token}, иначе "platega" попадёт в bot_token
+    app.router.add_post("/webhook/platega", payment_handler.platega_webhook)
+
+    TokenBasedRequestHandler(
+        dispatcher=dp,
+        bot_settings={"default": DefaultBotProperties(parse_mode=ParseMode.HTML)},
+    ).register(app, path="/webhook/{bot_token}")
     setup_application(app, dp, bot=bot)
+    logger.info("Telegram webhook route: /webhook/{bot_token}")
 
     app.router.add_get("/api/config", miniapp_handler.get_config)
     app.router.add_get("/api/user/{telegram_id}", miniapp_handler.get_user_info)
     app.router.add_get("/api/subscription/{telegram_id}", miniapp_handler.get_subscription)
     app.router.add_post("/api/pay", miniapp_handler.create_payment)
-    app.router.add_post("/webhook/platega", payment_handler.platega_webhook)
     app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
 
     # Mini App (при NPM вместо compose-nginx статика отдаётся ботом)
