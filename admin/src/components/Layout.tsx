@@ -22,7 +22,12 @@ const nav = [
   { to: '/promotions', icon: Percent, label: 'Акции', short: 'Акции' },
   { to: '/promos', icon: Tag, label: 'Промокоды', short: 'Промо' },
   { to: '/broadcasts', icon: Megaphone, label: 'Рассылки', short: 'Рассыл.' },
-];
+] as const;
+
+function getPageTitle(pathname: string): string {
+  const item = nav.find(({ to }) => (to === '/' ? pathname === '/' : pathname.startsWith(to)));
+  return item?.label ?? 'SkyPath Admin';
+}
 
 interface LayoutProps {
   onXuiSync: () => void;
@@ -84,6 +89,7 @@ function SidebarContent({
 export function Layout({ onXuiSync }: LayoutProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
+  const pageTitle = getPageTitle(location.pathname);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -106,7 +112,10 @@ export function Layout({ onXuiSync }: LayoutProps) {
         >
           {menuOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
-        <Logo brand="SkyPath" size={28} showText />
+        <div className="mobile-topbar__title">
+          <Logo brand="SkyPath" size={28} showText={false} />
+          <span className="mobile-topbar__page">{pageTitle}</span>
+        </div>
       </header>
 
       <div

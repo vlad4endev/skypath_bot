@@ -10,6 +10,7 @@ import { PromosPage } from './pages/PromosPage';
 import { PromotionsPage } from './pages/PromotionsPage';
 import { BroadcastsPage } from './pages/BroadcastsPage';
 import { XuiSyncModal } from './modals/XuiSyncModal';
+import { PwaShell } from './components/PwaShell';
 import { useToast } from './components/ui';
 
 function AppRoutes() {
@@ -25,9 +26,12 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="boot-screen">
-        <div className="spinner" style={{ width: 36, height: 36 }} />
-      </div>
+      <>
+        <div className="boot-screen">
+          <div className="spinner" style={{ width: 36, height: 36 }} />
+        </div>
+        <PwaShell />
+      </>
     );
   }
 
@@ -35,6 +39,7 @@ function AppRoutes() {
     return (
       <>
         <LoginPage />
+        <PwaShell />
         {ToastEl}
       </>
     );
@@ -42,6 +47,7 @@ function AppRoutes() {
 
   return (
     <>
+      <PwaShell />
       <BrowserRouter basename="/admin">
         <Routes>
           <Route

@@ -41,6 +41,7 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Введите пароль"
+                autoComplete="current-password"
                 autoFocus
                 required
               />
