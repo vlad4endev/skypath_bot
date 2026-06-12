@@ -42,7 +42,7 @@ ALLOWED_UPDATES = ["message", "callback_query", "pre_checkout_query", "web_app_d
 
 async def on_startup(bot: Bot, config: Config):
     try:
-        upgrade_head()
+        await upgrade_head()
     except Exception:
         logger.exception("Alembic migration failed — run: docker compose exec bot alembic upgrade head")
         raise
