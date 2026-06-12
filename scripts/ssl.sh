@@ -13,10 +13,9 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-set -a
 # shellcheck disable=SC1091
-source .env
-set +a
+source "$(dirname "$0")/load_env.sh"
+load_env_file .env
 
 if [ -z "${NGINX_DOMAIN:-}" ] || [ "$NGINX_DOMAIN" = "your-domain.com" ]; then
     echo -e "${RED}ОШИБКА: задай NGINX_DOMAIN в .env${NC}"

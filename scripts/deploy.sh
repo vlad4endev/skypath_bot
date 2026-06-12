@@ -132,10 +132,9 @@ ensure_docker_network() {
 
 ensure_docker_network
 
-set -a
 # shellcheck disable=SC1091
-source .env
-set +a
+source "$(dirname "$0")/load_env.sh"
+load_env_file .env
 
 # Не делаем «compose down» — сеть skypath_net может быть занята nginx-proxy-manager
 rm -f docker-compose.override.yml
