@@ -233,7 +233,7 @@ class XUIClient:
             "totalGB": traffic_bytes,
             "expiryTime": expiry,
             "enable": enable,
-            "tgId": str(telegram_id),
+            "tgId": int(telegram_id),
             "reset": 0,
         }
 
