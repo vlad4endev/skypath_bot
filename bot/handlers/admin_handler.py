@@ -99,8 +99,10 @@ async def cmd_admin(message: Message):
         InlineKeyboardButton(text="🔑 Промокоды", callback_data="admin_promos"),
     )
 
+    web_admin = f"{config.WEBHOOK_BASE_URL.rstrip('/')}/admin/"
     await message.answer(
-        "👨‍💼 <b>Панель администратора</b>",
+        f"👨‍💼 <b>Панель администратора</b>\n\n"
+        f"🌐 <b>Web-панель:</b> <a href=\"{web_admin}\">{web_admin}</a>",
         reply_markup=builder.as_markup(),
     )
 
@@ -320,8 +322,10 @@ async def cb_admin_main(call: CallbackQuery):
         InlineKeyboardButton(text="💰 Платежи", callback_data="admin_payments"),
     )
 
+    web_admin = f"{config.WEBHOOK_BASE_URL.rstrip('/')}/admin/"
     await call.message.edit_text(
-        "👨‍💼 <b>Панель администратора</b>",
+        f"👨‍💼 <b>Панель администратора</b>\n\n"
+        f"🌐 <b>Web-панель:</b> <a href=\"{web_admin}\">{web_admin}</a>",
         reply_markup=builder.as_markup(),
     )
     await call.answer()

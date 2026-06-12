@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkyPath Admin</title>
+  <link rel="stylesheet" href="/admin/static/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login-screen" class="login-screen">
+  <div class="login-box">
+    <div class="logo">🛡️</div>
+    <h1>SkyPath Admin</h1>
+    <p>Панель управления VPN-сервисом</p>
+    <form id="login-form">
+      <div class="form-group">
+        <label>Пароль</label>
+        <input id="login-password" type="password" placeholder="Введите пароль" required autofocus>
+      </div>
+      <div id="login-error" class="error-msg hidden"></div>
+      <button type="submit" class="btn btn-primary" style="width:100%;margin-top:16px;padding:12px">Войти</button>
+    </form>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="sidebar-brand">🛡️ Sky<span>Path</span> Admin</div>
+    <nav class="nav">
+      <button class="nav-item active" data-page="dashboard">📊 Аналитика</button>
+      <button class="nav-item" data-page="users">👥 Пользователи</button>
+      <button class="nav-item" data-page="subscriptions">🔑 Подписки</button>
+      <button class="nav-item" data-page="payments">💰 Платежи</button>
+      <button class="nav-item" data-page="promos">🎟️ Промокоды</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="logout-btn" class="btn btn-ghost" style="width:100%">Выйти</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <h2 id="page-title">Аналитика</h2>
+      <button class="btn btn-ghost btn-sm" onclick="loadPage(currentPage)">🔄 Обновить</button>
+    </header>
+
+    <div class="content">
+
+      <!-- Dashboard -->
+      <div id="page-dashboard" class="page">
+        <div id="stats-grid" class="stats-grid"></div>
+        <div class="charts-row">
+          <div class="chart-card"><h3>Выручка за 30 дней</h3><canvas id="chart-revenue" height="200"></canvas></div>
+          <div class="chart-card"><h3>Новые пользователи</h3><canvas id="chart-users" height="200"></canvas></div>
+        </div>
+        <div class="chart-card" style="max-width:400px"><h3>Распределение по планам</h3><canvas id="chart-plans" height="200"></canvas></div>
+      </div>
+
+      <!-- Users -->
+      <div id="page-users" class="page hidden">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <input id="users-search" class="search-input" placeholder="Поиск: ID, username, имя...">
+            <select id="users-banned">
+              <option value="">Все</option>
+              <option value="false">Активные</option>
+              <option value="true">Заблокированные</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" onclick="loadUsers()">Найти</button>
+          </div>
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Telegram</th><th>Username</th><th>Имя</th><th>Статус</th><th>Регистрация</th><th>Последний визит</th><th>Действия</th>
+            </tr></thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+          <div id="users-pagination" class="pagination"></div>
+        </div>
+      </div>
+
+      <!-- Subscriptions -->
+      <div id="page-subscriptions" class="page hidden">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <input id="subs-search" class="search-input" placeholder="Telegram ID...">
+            <select id="subs-status"></select>
+            <select id="subs-plan"></select>
+            <button class="btn btn-primary btn-sm" onclick="showCreateSub()">+ Создать</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadSubscriptions()">Найти</button>
+          </div>
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Telegram</th><th>План</th><th>Статус</th><th>До</th><th>Дней</th><th>VPN</th><th>Действия</th>
+            </tr></thead>
+            <tbody id="subs-tbody"></tbody>
+          </table>
+          <div id="subs-pagination" class="pagination"></div>
+        </div>
+      </div>
+
+      <!-- Payments -->
+      <div id="page-payments" class="page hidden">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <input id="payments-search" class="search-input" placeholder="ID, order, telegram...">
+            <select id="payments-status"></select>
+            <label style="display:flex;align-items:center;gap:6px;color:var(--text-muted);cursor:pointer">
+              <input id="payments-unfulfilled" type="checkbox"> Без VPN
+            </label>
+            <button class="btn btn-ghost btn-sm" onclick="loadPayments()">Найти</button>
+          </div>
+          <table>
+            <thead><tr>
+              <th>ID</th><th>Order</th><th>Telegram</th><th>Сумма</th><th>План</th><th>Статус</th><th>VPN</th><th>Дата</th><th>Действия</th>
+            </tr></thead>
+            <tbody id="payments-tbody"></tbody>
+          </table>
+          <div id="payments-pagination" class="pagination"></div>
+        </div>
+      </div>
+
+      <!-- Promos -->
+      <div id="page-promos" class="page hidden">
+        <div class="table-wrap">
+          <div class="table-toolbar">
+            <button class="btn btn-primary btn-sm" onclick="showCreatePromo()">+ Новый промокод</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadPromos()">🔄 Обновить</button>
+          </div>
+          <table>
+            <thead><tr>
+              <th>Код</th><th>Скидка</th><th>Использовано</th><th>Статус</th><th>Истекает</th><th>Действия</th>
+            </tr></thead>
+            <tbody id="promos-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="modal-overlay" class="modal-overlay hidden"></div>
+
+<script src="/admin/static/app.js"></script>
+</body>
+</html>

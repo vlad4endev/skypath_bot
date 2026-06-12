@@ -14,6 +14,8 @@ COPY database/ ./database/
 COPY alembic/ ./alembic/
 COPY scripts/ ./scripts/
 COPY data/ ./data/
+COPY admin/ ./admin/
+COPY webapp/ ./webapp/
 COPY alembic.ini .
 
 ENV PYTHONUNBUFFERED=1

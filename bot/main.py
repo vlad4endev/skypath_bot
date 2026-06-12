@@ -28,6 +28,7 @@ from bot.handlers import (
 from bot.middlewares.throttle import ThrottlingMiddleware
 from bot.middlewares.user import UserMiddleware
 from bot.scheduler import setup_scheduler
+from bot.admin.api import setup_admin_routes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -149,6 +150,8 @@ def create_app(config: Config) -> web.Application:
     app.router.add_get("/api/dashboard/{telegram_id}", miniapp_handler.get_dashboard)
     app.router.add_post("/api/pay", miniapp_handler.create_payment)
     app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
+
+    setup_admin_routes(app, config)
 
     # Mini App (при NPM вместо compose-nginx статика отдаётся ботом)
     webapp_dir = Path(__file__).resolve().parent.parent / "webapp"

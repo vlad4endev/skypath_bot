@@ -71,12 +71,18 @@ class Config:
     SUPPORT_CHANNEL: str = os.getenv("SUPPORT_CHANNEL", "@SkyPathVPN")
     ADMIN_NOTIFY_ID: int = int(os.getenv("ADMIN_NOTIFY_ID", "86517651"))
 
+    # Web admin panel (SHA256 hash of password, see scripts/gen_admin_password.py)
+    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "")
+    ADMIN_PASSWORD_SALT: str = os.getenv("ADMIN_PASSWORD_SALT", "")
+
     def __post_init__(self):
         self.BOT_MODE = self.BOT_MODE.strip().lower()
         self.WEBHOOK_SECRET = resolve_webhook_secret(self.BOT_TOKEN, self.WEBHOOK_SECRET)
         self.ADMIN_IDS = [
             int(x) for x in os.getenv("ADMIN_IDS", "86517651").split(",") if x.strip()
         ]
+        if not self.ADMIN_PASSWORD_SALT:
+            self.ADMIN_PASSWORD_SALT = self.WEBHOOK_SECRET[:32] or "skypath-admin-salt"
         self.XUI_INBOUND_IDS = {
             "🇷🇺 Россия": int(os.getenv("INBOUND_RU", "1")),
             "🇺🇸 США": int(os.getenv("INBOUND_US", "19")),
