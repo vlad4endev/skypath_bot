@@ -9,7 +9,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.webhook.aiohttp_server import TokenBasedRequestHandler, setup_application
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 
 from bot.config import Config
@@ -38,12 +38,14 @@ async def on_startup(bot: Bot, config: Config):
     await init_db()
     logger.info("Database initialized")
 
+    webhook_url = f"{config.WEBHOOK_BASE_URL.rstrip('/')}/webhook"
     await bot.set_webhook(
-        url=f"{config.WEBHOOK_BASE_URL}/webhook/{config.BOT_TOKEN}",
+        url=webhook_url,
+        secret_token=config.WEBHOOK_SECRET,
         drop_pending_updates=True,
         allowed_updates=["message", "callback_query", "pre_checkout_query", "web_app_data"],
     )
-    logger.info("Webhook set: %s", config.WEBHOOK_BASE_URL)
+    logger.info("Webhook set: %s", webhook_url)
 
 
 async def on_shutdown(bot: Bot):
@@ -86,15 +88,17 @@ def create_app(config: Config) -> web.Application:
     app["bot"] = bot
     app["config"] = config
 
-    # Platega до /webhook/{bot_token}, иначе "platega" попадёт в bot_token
+    # Platega на отдельном пути (без токена в URL — иначе NPM/Telegram могут ломать ':')
     app.router.add_post("/webhook/platega", payment_handler.platega_webhook)
 
-    TokenBasedRequestHandler(
+    SimpleRequestHandler(
         dispatcher=dp,
-        bot_settings={"default": DefaultBotProperties(parse_mode=ParseMode.HTML)},
-    ).register(app, path="/webhook/{bot_token}")
+        bot=bot,
+        secret_token=config.WEBHOOK_SECRET,
+        handle_in_background=True,
+    ).register(app, path="/webhook")
     setup_application(app, dp, bot=bot)
-    logger.info("Telegram webhook route: /webhook/{bot_token}")
+    logger.info("Telegram webhook route: POST /webhook (secret_token)")
 
     app.router.add_get("/api/config", miniapp_handler.get_config)
     app.router.add_get("/api/user/{telegram_id}", miniapp_handler.get_user_info)

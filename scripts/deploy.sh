@@ -185,7 +185,7 @@ docker compose ps
 BASE="${WEBHOOK_BASE_URL%/}"
 echo ""
 echo -e "${GREEN}=== Деплой завершён ===${NC}"
-echo "Telegram webhook: ${BASE}/webhook/<BOT_TOKEN>"
+echo "Telegram webhook: ${BASE}/webhook"
 echo "Platega webhook:   ${BASE}/webhook/platega"
 echo "Mini App:          ${MINI_APP_URL:-${BASE}/app}"
 echo "Health:            ${BASE}/health"

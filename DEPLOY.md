@@ -28,7 +28,7 @@ https://<NGINX_DOMAIN>/webhook/platega
 Webhook выставляется автоматически при старте бота:
 
 ```
-https://<NGINX_DOMAIN>/webhook/<BOT_TOKEN>
+https://<NGINX_DOMAIN>/webhook
 ```
 
 Mini App URL в @BotFather: `https://<NGINX_DOMAIN>/app`

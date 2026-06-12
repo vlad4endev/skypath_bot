@@ -18,6 +18,7 @@ class Config:
 
     # Server
     WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "https://your-domain.com")
+    WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
     PORT: int = int(os.getenv("PORT", "8080"))
     MINI_APP_URL: str = os.getenv("MINI_APP_URL", "https://your-domain.com/app")
     WELCOME_PHOTO_URL: str = os.getenv("WELCOME_PHOTO_URL", "")
@@ -48,6 +49,8 @@ class Config:
     ADMIN_NOTIFY_ID: int = int(os.getenv("ADMIN_NOTIFY_ID", "86517651"))
 
     def __post_init__(self):
+        if not self.WEBHOOK_SECRET:
+            self.WEBHOOK_SECRET = self.BOT_TOKEN
         self.ADMIN_IDS = [
             int(x) for x in os.getenv("ADMIN_IDS", "86517651").split(",") if x.strip()
         ]
