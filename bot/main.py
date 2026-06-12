@@ -87,23 +87,31 @@ def create_app(config: Config) -> web.Application:
     dp.include_router(admin_handler.router)
     dp.include_router(miniapp_handler.router)
 
+    _lifecycle_started = False
+    polling_task: asyncio.Task[None] | None = None
+
     async def _startup(**_kwargs):
+        nonlocal _lifecycle_started, polling_task
+        if _lifecycle_started:
+            return
+        _lifecycle_started = True
+
         await on_startup(bot, config)
         if config.use_polling:
-            task = asyncio.create_task(
+            polling_task = asyncio.create_task(
                 dp.start_polling(bot, allowed_updates=ALLOWED_UPDATES, handle_signals=False)
             )
-            app["_polling_task"] = task
             logger.info("Telegram polling task started")
 
     async def _shutdown(**_kwargs):
-        task = app.get("_polling_task")
-        if task is not None:
-            task.cancel()
+        nonlocal polling_task
+        if polling_task is not None:
+            polling_task.cancel()
             try:
-                await task
+                await polling_task
             except asyncio.CancelledError:
                 pass
+            polling_task = None
         await on_shutdown(bot, config)
 
     dp.startup.register(_startup)
