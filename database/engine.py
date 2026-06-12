@@ -1,8 +1,8 @@
 """
 Подключение к PostgreSQL
 """
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from database.models import Base
 import os
 
 DATABASE_URL = os.getenv("DB_URL", "postgresql+asyncpg://vpnbot:password@localhost:5432/skypath")
@@ -19,9 +19,9 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 
 async def init_db():
-    """Создать таблицы при старте"""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    """Проверить подключение к БД (схема — через Alembic, не create_all)."""
+    async with engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
 
 
 async def get_session() -> AsyncSession:

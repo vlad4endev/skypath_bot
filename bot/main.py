@@ -16,6 +16,7 @@ from aiohttp import web
 
 from bot.config import Config
 from database.engine import init_db
+from database.migrate import upgrade_head
 from bot.handlers import (
     start_handler,
     account_handler,
@@ -40,6 +41,11 @@ ALLOWED_UPDATES = ["message", "callback_query", "pre_checkout_query", "web_app_d
 
 
 async def on_startup(bot: Bot, config: Config):
+    try:
+        upgrade_head()
+    except Exception:
+        logger.exception("Alembic migration failed — run: docker compose exec bot alembic upgrade head")
+        raise
     await init_db()
     logger.info("Database initialized")
 
