@@ -5,14 +5,66 @@ import logging
 from aiohttp import web
 from aiogram import Router
 
-from bot.config import Config
+from bot.config import Config, PLANS, MONTHS_LABELS
 from bot.services.miniapp_purchase import process_miniapp_purchase
+from bot.services.xui_client import XUIClient
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo
+from database.models import SubscriptionStatus, PlanType
 
 router = Router()
 logger = logging.getLogger(__name__)
 config = Config()
+
+xui = XUIClient(
+    host=config.XUI_HOST,
+    url_prefix=config.XUI_URL_PREFIX,
+    username=config.XUI_USERNAME,
+    password=config.XUI_PASSWORD,
+    api_token=config.XUI_API_TOKEN,
+    sub_path=config.XUI_SUB_PATH,
+)
+
+ACTIVE_STATUSES = {SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL}
+
+PLAN_FEATURES = {
+    "FREE": ["3 дня бесплатно", "1 устройство", "5 ГБ трафика", "Все серверы"],
+    "BASIC": ["3 устройства", "Безлимитный трафик", "5 локаций", "Поддержка 24/7"],
+    "MULTI": ["5 устройств", "Безлимитный трафик", "Все серверы", "Приоритетная скорость"],
+    "SUPER": ["10 устройств", "Безлимитный трафик", "Все серверы", "Максимальный приоритет"],
+}
+
+
+def _serialize_plans() -> dict:
+    result = {}
+    for key, plan in PLANS.items():
+        entry = {
+            "key": key,
+            "name": plan["name"],
+            "description": plan.get("description", ""),
+            "limit_ip": plan.get("limit_ip", 1),
+            "traffic_gb": plan.get("traffic_gb", 0),
+            "features": PLAN_FEATURES.get(key, []),
+            "recommended": key == "MULTI",
+        }
+        if key == "FREE":
+            entry["price"] = 0
+            entry["days"] = plan.get("days", 3)
+        else:
+            entry["prices"] = plan.get("prices", {})
+        result[key] = entry
+    return result
+
+
+def _plan_display_name(plan: PlanType | None) -> str:
+    if not plan:
+        return "—"
+    cfg = PLANS.get(plan.value, {})
+    return cfg.get("name", plan.value)
+
+
+def _is_subscription_live(sub) -> bool:
+    return sub is not None and sub.is_active
 
 
 async def get_config(_request: web.Request) -> web.Response:
@@ -20,6 +72,14 @@ async def get_config(_request: web.Request) -> web.Response:
         "brand_name": config.BRAND_NAME,
         "support_url": config.SUPPORT_URL,
         "bot_username": config.BOT_USERNAME,
+        "months_labels": MONTHS_LABELS,
+    })
+
+
+async def get_plans(_request: web.Request) -> web.Response:
+    return web.json_response({
+        "plans": _serialize_plans(),
+        "months_labels": MONTHS_LABELS,
     })
 
 
@@ -41,6 +101,27 @@ async def get_user_info(request: web.Request) -> web.Response:
     })
 
 
+def _serialize_subscription(sub, *, traffic: dict | None = None, plan_info: dict | None = None) -> dict:
+    is_live = _is_subscription_live(sub)
+    return {
+        "id": sub.id,
+        "plan": sub.plan.value if sub.plan else None,
+        "plan_name": _plan_display_name(sub.plan),
+        "status": sub.status.value if sub.status else None,
+        "is_active": is_live,
+        "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+        "started_at": sub.started_at.isoformat() if sub.started_at else None,
+        "days_left": sub.days_left,
+        "limit_ip": sub.limit_ip,
+        "months_paid": sub.months_paid,
+        "traffic_gb": sub.traffic_gb,
+        "vpn_key": sub.vpn_key,
+        "vpn_sub_id": sub.vpn_sub_id,
+        "traffic": traffic,
+        "plan_info": plan_info,
+    }
+
+
 async def get_subscription(request: web.Request) -> web.Response:
     telegram_id = int(request.match_info["telegram_id"])
 
@@ -49,18 +130,60 @@ async def get_subscription(request: web.Request) -> web.Response:
         sub = await sub_repo.get_active(telegram_id)
 
     if not sub:
-        return web.json_response({"status": None})
+        return web.json_response({"status": None, "is_active": False})
+
+    traffic = None
+    if sub.vpn_email:
+        traffic = await xui.get_client_traffic(sub.vpn_email)
+
+    plan_key = sub.plan.value if sub.plan else None
+    plan_info = _serialize_plans().get(plan_key) if plan_key else None
+
+    return web.json_response(_serialize_subscription(sub, traffic=traffic, plan_info=plan_info))
+
+
+async def get_dashboard(request: web.Request) -> web.Response:
+    """Полный личный кабинет: пользователь, подписка, трафик, серверы."""
+    telegram_id = int(request.match_info["telegram_id"])
+
+    async with async_session() as session:
+        user_repo = UserRepo(session)
+        sub_repo = SubscriptionRepo(session)
+        user = await user_repo.get_by_telegram_id(telegram_id)
+        sub = await sub_repo.get_active(telegram_id) if user else None
+        referrals = await user_repo.count_referrals(telegram_id) if user else 0
+
+    has_subscription = sub is not None and _is_subscription_live(sub)
+
+    traffic = None
+    servers = await xui.get_servers_status(config.XUI_INBOUND_IDS)
+
+    plan_info = None
+    subscription_data = None
+
+    if sub:
+        if sub.vpn_email:
+            traffic = await xui.get_client_traffic(sub.vpn_email)
+        plan_key = sub.plan.value if sub.plan else None
+        plan_info = _serialize_plans().get(plan_key) if plan_key else None
+        subscription_data = _serialize_subscription(
+            sub, traffic=traffic, plan_info=plan_info
+        )
 
     return web.json_response({
-        "id": sub.id,
-        "plan": sub.plan.value if sub.plan else None,
-        "status": sub.status.value if sub.status else None,
-        "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
-        "days_left": sub.days_left,
-        "limit_ip": sub.limit_ip,
-        "months_paid": sub.months_paid,
-        "vpn_key": sub.vpn_key,
-        "vpn_sub_id": sub.vpn_sub_id,
+        "brand_name": config.BRAND_NAME,
+        "support_url": config.SUPPORT_URL,
+        "user": {
+            "telegram_id": telegram_id,
+            "full_name": user.full_name if user else None,
+            "username": user.username if user else None,
+            "member_since": user.created_at.isoformat() if user else None,
+            "referrals_count": referrals,
+        } if user else None,
+        "has_subscription": has_subscription,
+        "subscription": subscription_data,
+        "servers": servers,
+        "plans": _serialize_plans() if not has_subscription else None,
     })
 
 

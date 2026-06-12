@@ -161,6 +161,11 @@ class XUIClient:
         expire_date = expire_date.replace(hour=0, minute=0, second=0, microsecond=0)
         return int(expire_date.timestamp() * 1000)
 
+    def _expiry_unix_days(self, days: int) -> int:
+        expire_date = datetime.utcnow() + timedelta(days=days)
+        expire_date = expire_date.replace(hour=23, minute=59, second=59, microsecond=0)
+        return int(expire_date.timestamp() * 1000)
+
     def _build_client_payload(
         self,
         *,
@@ -235,6 +240,70 @@ class XUIClient:
 
         return await self._retry(_fetch, "clients/get")
 
+    async def get_client_traffic(self, email: str) -> dict[str, Any] | None:
+        """Трафик клиента из 3X-UI: up/down в байтах, лимит, безлимит."""
+        try:
+            raw = await self.get_client(email)
+        except Exception as e:
+            logger.warning("get_client_traffic failed for %s: %s", email, e)
+            return None
+
+        client = raw
+        if isinstance(raw, dict) and "clients" in raw:
+            clients = raw.get("clients") or []
+            client = clients[0] if clients else raw
+
+        if not isinstance(client, dict):
+            return None
+
+        up = int(client.get("up") or 0)
+        down = int(client.get("down") or 0)
+        used_bytes = up + down
+        limit_bytes = int(client.get("totalGB") or 0)
+        unlimited = limit_bytes <= 0
+        limit_gb = round(limit_bytes / (1024**3), 2) if limit_bytes > 0 else 0
+        used_gb = round(used_bytes / (1024**3), 2)
+
+        pct = 0.0
+        if not unlimited and limit_bytes > 0:
+            pct = min(100.0, round(used_bytes / limit_bytes * 100, 1))
+
+        return {
+            "up_bytes": up,
+            "down_bytes": down,
+            "used_bytes": used_bytes,
+            "used_gb": used_gb,
+            "limit_bytes": limit_bytes,
+            "limit_gb": limit_gb,
+            "unlimited": unlimited,
+            "usage_percent": pct,
+            "enabled": bool(client.get("enable", True)),
+        }
+
+    async def get_servers_status(self, inbound_ids: dict[str, int]) -> list[dict[str, Any]]:
+        """Статус серверов по inbound ID из панели."""
+        try:
+            inbounds = await self.list_inbounds()
+        except Exception as e:
+            logger.warning("get_servers_status failed: %s", e)
+            return [
+                {"name": name, "online": None}
+                for name in inbound_ids
+            ]
+
+        by_id = {int(ib.get("id", 0)): ib for ib in inbounds if ib.get("id") is not None}
+        result = []
+        for name, iid in inbound_ids.items():
+            ib = by_id.get(int(iid))
+            if ib is None:
+                result.append({"name": name, "online": None})
+            else:
+                result.append({
+                    "name": name,
+                    "online": bool(ib.get("enable", False)),
+                })
+        return result
+
     async def _add_client_legacy(
         self,
         inbound_id: int,
@@ -269,11 +338,12 @@ class XUIClient:
         months: int,
         limit_ip: int = 3,
         traffic_gb: int = 0,
+        days: int = 0,
     ) -> dict:
         client_uuid = self._gen_uuid()
         email = self._gen_email(first_name, last_name)
         sub_id = self._gen_sub_id()
-        expiry = self._expiry_unix(months)
+        expiry = self._expiry_unix_days(days) if days > 0 else self._expiry_unix(months)
         traffic_bytes = traffic_gb * 1024**3 if traffic_gb else 0
 
         client = self._build_client_payload(

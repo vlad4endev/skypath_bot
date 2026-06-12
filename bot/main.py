@@ -19,7 +19,6 @@ from database.engine import init_db
 from bot.handlers import (
     start_handler,
     account_handler,
-    subscription_handler,
     payment_handler,
     admin_handler,
     miniapp_handler,
@@ -81,7 +80,6 @@ def create_app(config: Config) -> web.Application:
 
     dp.include_router(start_handler.router)
     dp.include_router(account_handler.router)
-    dp.include_router(subscription_handler.router)
     dp.include_router(payment_handler.router)
     dp.include_router(referral_handler.router)
     dp.include_router(admin_handler.router)
@@ -140,8 +138,10 @@ def create_app(config: Config) -> web.Application:
     setup_application(app, dp, bot=bot)
 
     app.router.add_get("/api/config", miniapp_handler.get_config)
+    app.router.add_get("/api/plans", miniapp_handler.get_plans)
     app.router.add_get("/api/user/{telegram_id}", miniapp_handler.get_user_info)
     app.router.add_get("/api/subscription/{telegram_id}", miniapp_handler.get_subscription)
+    app.router.add_get("/api/dashboard/{telegram_id}", miniapp_handler.get_dashboard)
     app.router.add_post("/api/pay", miniapp_handler.create_payment)
     app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
 

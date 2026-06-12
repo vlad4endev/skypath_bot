@@ -4,12 +4,13 @@
 import logging
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from aiogram.filters import CommandObject
 
 from bot.config import Config
+from bot.keyboards.webapp import cabinet_button, is_miniapp_available
 from database.engine import async_session
 from database.repository import UserRepo, SubscriptionRepo
 
@@ -27,24 +28,17 @@ def _is_valid_https_url(url: str | None) -> bool:
     return host not in _PLACEHOLDER_HOSTS
 
 
-def main_keyboard(
-    has_subscription: bool = False,
-    *,
-    include_webapp: bool | None = None,
-) -> InlineKeyboardMarkup:
+def main_keyboard(has_subscription: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+
+    if is_miniapp_available():
+        label = "👤 Личный кабинет" if has_subscription else "🚀 Получить VPN"
+        builder.row(cabinet_button(label))
 
     if has_subscription:
         builder.row(
-            InlineKeyboardButton(text="👤 Мой аккаунт", callback_data="account"),
             InlineKeyboardButton(text="🔑 Мои ключи", callback_data="my_vpn"),
-        )
-        builder.row(
-            InlineKeyboardButton(text="💳 Продлить / Купить", callback_data="plans"),
-        )
-    else:
-        builder.row(
-            InlineKeyboardButton(text="🔑 Получить VPN", callback_data="plans"),
+            InlineKeyboardButton(text="👤 Аккаунт", callback_data="account"),
         )
 
     builder.row(
@@ -55,15 +49,6 @@ def main_keyboard(
         InlineKeyboardButton(text="❓ Поддержка", url=config.SUPPORT_URL),
         InlineKeyboardButton(text="📄 Инфо", callback_data="info"),
     )
-    if include_webapp is None:
-        include_webapp = _is_valid_https_url(config.MINI_APP_URL)
-    if include_webapp and _is_valid_https_url(config.MINI_APP_URL):
-        builder.row(
-            InlineKeyboardButton(
-                text=f"🌐 {config.BRAND_NAME}",
-                web_app=WebAppInfo(url=config.MINI_APP_URL),
-            )
-        )
     return builder.as_markup()
 
 
@@ -82,10 +67,7 @@ async def _send_welcome(
         try:
             await message.answer(
                 text,
-                reply_markup=main_keyboard(
-                    has_subscription=has_subscription,
-                    include_webapp=False,
-                ),
+                reply_markup=main_keyboard(has_subscription=has_subscription),
             )
         except Exception as e2:
             logger.error("Welcome fallback failed: %s", e2)
@@ -112,7 +94,7 @@ WELCOME_TEXT = f"""
 • 🌍 Серверы: Россия, США, Германия, Нидерланды, Казахстан
 • 💰 Честная цена — от 250 руб/месяц
 
-📅 Статус подписки и ключи — в личном кабинете
+📱 Тарифы, оплата и личный кабинет — в приложении
 """
 
 
@@ -151,9 +133,8 @@ async def cmd_start(message: Message, command: CommandObject):
 
         active_sub = await sub_repo.get_active(user.id)
 
-    # Приветствие
     if is_new:
-        welcome = WELCOME_TEXT + "\n\n🎁 <b>Для тебя — 3 дня бесплатно!</b> Нажми «Получить VPN»"
+        welcome = WELCOME_TEXT + "\n\n🎁 <b>Для тебя — 3 дня бесплатно!</b> Открой приложение 👇"
     else:
         name = user.first_name or "друг"
         welcome = f"👋 С возвращением, <b>{name}</b>!\n" + WELCOME_TEXT
@@ -185,6 +166,24 @@ async def cb_main(call: CallbackQuery):
     await call.answer()
 
 
+@router.callback_query(F.data == "plans")
+async def cb_plans_redirect(call: CallbackQuery):
+    """Старые кнопки «Купить» — перенаправление в Mini App."""
+    text = (
+        "💎 <b>Тарифы и оплата</b> доступны в приложении.\n\n"
+        "Нажми кнопку ниже — там удобный выбор тарифа и личный кабинет."
+    )
+    builder = InlineKeyboardBuilder()
+    if is_miniapp_available():
+        builder.row(cabinet_button("🌐 Открыть приложение"))
+    builder.row(InlineKeyboardButton(text="⬅️ Главная", callback_data="main"))
+
+    await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
+        if call.message.photo else \
+        await call.message.edit_text(text=text, reply_markup=builder.as_markup())
+    await call.answer()
+
+
 @router.callback_query(F.data == "about")
 async def cb_about(call: CallbackQuery):
     text = f"""
@@ -202,13 +201,14 @@ async def cb_about(call: CallbackQuery):
 <b>Технологии:</b>
 • VLESS + XTLS-Reality (необнаруживаем)
 • 3X-UI панель, обновления каждый день
-• Автопродление через бота
 
 <b>Контакты:</b>
 • Поддержка: @SkyPathsupport
 • Канал: @SkyPathVPN
 """
     builder = InlineKeyboardBuilder()
+    if is_miniapp_available():
+        builder.row(cabinet_button())
     builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="main"))
 
     await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
@@ -239,10 +239,9 @@ async def cb_info(call: CallbackQuery):
 ₿ Крипто (USDT, BTC, ETH)
 """
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="📲 Купить", callback_data="plans"),
-        InlineKeyboardButton(text="⬅️ Назад", callback_data="main"),
-    )
+    if is_miniapp_available():
+        builder.row(cabinet_button("📲 Открыть приложение"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="main"))
 
     await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
         if call.message.photo else \
@@ -270,10 +269,9 @@ async def cb_reviews(call: CallbackQuery):
 <i>Более 2000 довольных клиентов 🚀</i>
 """
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="📲 Попробовать", callback_data="plans"),
-        InlineKeyboardButton(text="⬅️ Назад", callback_data="main"),
-    )
+    if is_miniapp_available():
+        builder.row(cabinet_button("📲 Попробовать"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="main"))
 
     await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
         if call.message.photo else \

@@ -8,9 +8,10 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardBut
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.config import Config
+from bot.keyboards.webapp import cabinet_button, is_miniapp_available
 from database.engine import async_session
-from database.repository import UserRepo, SubscriptionRepo
-from database.models import SubscriptionStatus
+from database.repository import UserRepo, SubscriptionRepo, PaymentRepo, ACTIVE_SUBSCRIPTION_STATUSES
+from database.models import SubscriptionStatus, PlanType, PaymentStatus
 from bot.handlers.referral_handler import referral_link
 
 router = Router()
@@ -36,8 +37,14 @@ async def cb_account(call: CallbackQuery):
 
         user = await user_repo.get_by_telegram_id(call.from_user.id)
         subs = await sub_repo.get_all_for_user(call.from_user.id)
-        active_sub = next((s for s in subs if s.status == SubscriptionStatus.ACTIVE), None)
+        active_sub = next(
+            (s for s in subs if s.status in ACTIVE_SUBSCRIPTION_STATUSES),
+            None,
+        )
         referrals_count = await user_repo.count_referrals(call.from_user.id) if user else 0
+        pay_repo = PaymentRepo(session)
+        payments = await pay_repo.get_for_user(call.from_user.id, limit=3)
+        last_paid = next((p for p in payments if p.status == PaymentStatus.SUCCEEDED), None)
 
     if not user:
         await call.answer("Аккаунт не найден", show_alert=True)
@@ -54,6 +61,15 @@ async def cb_account(call: CallbackQuery):
 
         days_text = f"⏳ Осталось: <b>{days} дней</b>" if days > 0 else "⚠️ <b>Подписка истекает сегодня!</b>"
 
+        payment_line = ""
+        if last_paid and active_sub.plan != PlanType.FREE:
+            paid_amt = last_paid.paid_amount or last_paid.amount
+            paid_date = last_paid.paid_at.strftime("%d.%m.%Y") if last_paid.paid_at else "—"
+            payment_line = (
+                f"💳 Последняя оплата: <b>{paid_amt:.0f} ₽</b> "
+                f"({last_paid.months} мес., {paid_date})\n"
+            )
+
         text = f"""
 👤 <b>Мой аккаунт</b>
 
@@ -68,7 +84,7 @@ async def cb_account(call: CallbackQuery):
 📆 До: <b>{expires_str}</b>
 {days_text}
 📱 Устройств: <b>{active_sub.limit_ip}</b>
-👥 Приглашено друзей: <b>{referrals_count}</b>
+{payment_line}👥 Приглашено друзей: <b>{referrals_count}</b>
 ━━━━━━━━━━━━━━━━━
 """
     else:
@@ -87,13 +103,13 @@ async def cb_account(call: CallbackQuery):
 
     ref_url = referral_link(call.from_user.id)
     builder = InlineKeyboardBuilder()
+    if is_miniapp_available():
+        label = "🔄 Продлить в приложении" if active_sub else "🛒 Купить в приложении"
+        builder.row(cabinet_button(label))
     if active_sub:
         builder.row(
             InlineKeyboardButton(text="🔑 Мои VPN ключи", callback_data="my_vpn"),
-            InlineKeyboardButton(text="🔄 Продлить", callback_data="plans"),
         )
-    else:
-        builder.row(InlineKeyboardButton(text="🛒 Купить подписку", callback_data="plans"))
 
     builder.row(
         InlineKeyboardButton(
@@ -117,15 +133,14 @@ async def cb_my_vpn(call: CallbackQuery):
         sub_repo = SubscriptionRepo(session)
         subs = await sub_repo.get_all_for_user(call.from_user.id)
 
-    active_subs = [s for s in subs if s.status == SubscriptionStatus.ACTIVE]
+    active_subs = [s for s in subs if s.status in ACTIVE_SUBSCRIPTION_STATUSES]
 
     if not active_subs:
         text = "❌ У тебя нет активных VPN подписок.\n\nНажми «Купить» чтобы начать!"
         builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="🛒 Купить", callback_data="plans"),
-            InlineKeyboardButton(text="⬅️ Назад", callback_data="account"),
-        )
+        if is_miniapp_available():
+            builder.row(cabinet_button("🛒 Купить в приложении"))
+        builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="account"))
         await call.message.edit_caption(caption=text, reply_markup=builder.as_markup()) \
             if call.message.photo else \
             await call.message.edit_text(text=text, reply_markup=builder.as_markup())

@@ -2,740 +2,929 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
   <title>VPN</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
   <style>
     :root {
-      --sky: #00c6ff;
-      --sky-dark: #0072ff;
-      --sky-glow: rgba(0, 198, 255, 0.25);
-      --bg: #0a0d14;
+      /* SKYFLOW poster palette */
+      --accent: #8a9cfe;
+      --accent-2: #6b7fdb;
+      --accent-glow: rgba(138, 156, 254, 0.4);
+      --bg: #0a0e1f;
+      --bg-purple: #12102a;
       --surface: rgba(255,255,255,0.04);
-      --surface-hover: rgba(255,255,255,0.08);
-      --border: rgba(255,255,255,0.08);
-      --text: #e8edf7;
-      --muted: rgba(232,237,247,0.45);
-      --success: #00e5a0;
-      --danger: #ff4d6d;
-      --warning: #ffb347;
-      --radius: 18px;
-      --radius-sm: 12px;
+      --surface-2: rgba(138, 156, 254, 0.08);
+      --border: rgba(138, 156, 254, 0.14);
+      --text: #ffffff;
+      --muted: rgba(190, 200, 230, 0.55);
+      --success: #6ecf8a;
+      --success-bg: rgba(30, 80, 50, 0.55);
+      --danger: #ff6b8a;
+      --warning: #c9b0ff;
+      --radius: 22px;
+      --radius-sm: 14px;
+      --nav-h: 72px;
+      --pill: 999px;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
     body {
-      font-family: 'Sora', sans-serif;
-      background: var(--bg);
+      font-family: 'Inter', system-ui, sans-serif;
+      background: linear-gradient(165deg, var(--bg) 0%, var(--bg-purple) 55%, #0d0a18 100%);
       color: var(--text);
       min-height: 100dvh;
       overflow-x: hidden;
     }
 
-    /* Mesh background */
     body::before {
       content: '';
       position: fixed;
       inset: 0;
       background:
-        radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,114,255,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 60% at 80% 80%, rgba(0,198,255,0.08) 0%, transparent 60%);
+        radial-gradient(ellipse 55% 45% at 85% 15%, rgba(138,156,254,0.14) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 35% at 5% 90%, rgba(80,60,140,0.12) 0%, transparent 55%);
       pointer-events: none;
       z-index: 0;
     }
 
-    .app { position: relative; z-index: 1; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: radial-gradient(rgba(138,156,254,0.12) 1px, transparent 1px);
+      background-size: 22px 22px;
+      opacity: 0.35;
+      pointer-events: none;
+      z-index: 0;
+      mask-image: radial-gradient(ellipse 80% 70% at 70% 30%, black 20%, transparent 75%);
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      padding: env(safe-area-inset-top) 0 calc(var(--nav-h) + env(safe-area-inset-bottom));
+      max-width: 480px;
+      margin: 0 auto;
+    }
 
     /* Header */
     .header {
-      padding: 20px 20px 0;
+      padding: 16px 20px 8px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
+    .logo { display: flex; align-items: center; gap: 12px; }
+
+    .logo-mark {
+      width: 44px; height: 44px;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
     }
 
-    .logo-icon {
-      width: 38px;
-      height: 38px;
-      background: linear-gradient(135deg, var(--sky-dark), var(--sky));
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      box-shadow: 0 0 20px var(--sky-glow);
+    .logo-mark svg.radar {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+    }
+
+    .logo-s {
+      position: relative; z-index: 1;
+      font-size: 22px; font-weight: 900;
+      color: #fff;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      text-shadow: 0 0 24px rgba(138,156,254,0.5);
     }
 
     .logo-text {
-      font-size: 18px;
-      font-weight: 700;
-      background: linear-gradient(90deg, var(--sky), #fff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      font-size: 15px; font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
     }
 
-    .user-badge {
-      background: var(--surface);
+    .brand-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px;
+      border-radius: var(--pill);
+      background: rgba(138, 156, 254, 0.12);
+      border: 1px solid rgba(138, 156, 254, 0.28);
+      color: var(--accent);
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .brand-pill.green {
+      background: var(--success-bg);
+      border-color: rgba(110, 207, 138, 0.35);
+      color: var(--success);
+    }
+
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--surface-2);
       border: 1px solid var(--border);
-      padding: 8px 14px;
-      border-radius: 20px;
-      font-size: 13px;
-      color: var(--muted);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+      color: var(--accent);
     }
 
-    /* Nav tabs */
-    .nav {
-      padding: 16px 20px 0;
-      display: flex;
-      gap: 8px;
-    }
-
-    .nav-btn {
-      flex: 1;
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      background: var(--surface);
-      color: var(--muted);
-      font-family: 'Sora', sans-serif;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-      text-align: center;
-    }
-
-    .nav-btn.active {
-      background: linear-gradient(135deg, rgba(0,114,255,0.25), rgba(0,198,255,0.15));
-      border-color: rgba(0,198,255,0.3);
-      color: var(--sky);
-    }
-
-    /* Content sections */
-    .section { display: none; padding: 16px 20px 80px; }
+    /* Sections */
+    .section { display: none; padding: 8px 20px 24px; animation: fadeIn 0.25s ease; }
     .section.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-    /* Card */
+    /* Cards */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 18px;
       margin-bottom: 12px;
+      backdrop-filter: blur(12px);
+    }
+
+    .card-glow {
+      background: linear-gradient(135deg, rgba(138,156,254,0.1), rgba(80,60,140,0.06));
+      border-color: rgba(138, 156, 254, 0.22);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card-glow::before {
+      content: '';
+      position: absolute;
+      top: -40%; right: -30%;
+      width: 180px; height: 180px;
+      background: radial-gradient(circle, rgba(138,156,254,0.12) 0%, transparent 70%);
+      pointer-events: none;
     }
 
     .card-title {
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 14px;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 12px;
     }
 
-    /* Status badge */
+    /* Hero (new users) */
+    .hero {
+      text-align: center;
+      padding: 28px 8px 20px;
+    }
+
+    .hero h1 {
+      font-size: 26px; font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+      margin-bottom: 10px;
+    }
+
+    .hero p {
+      font-size: 14px; color: var(--muted);
+      line-height: 1.55; max-width: 300px; margin: 0 auto;
+    }
+
+    .hero-badge {
+      margin-bottom: 18px;
+    }
+
+    .hero h1 .accent { color: var(--accent); }
+
+    .hero-radar {
+      width: 120px; height: 120px;
+      margin: 0 auto 20px;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .hero-radar .logo-s { font-size: 52px; }
+
+    .hero-radar svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* Status */
+    .status-row {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .plan-title { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+
     .status-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 5px 12px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 20px;
+      font-size: 12px; font-weight: 700;
     }
-
-    .status-badge.active { background: rgba(0,229,160,0.12); color: var(--success); border: 1px solid rgba(0,229,160,0.2); }
-    .status-badge.expired { background: rgba(255,77,109,0.12); color: var(--danger); border: 1px solid rgba(255,77,109,0.2); }
-    .status-badge.pending { background: rgba(255,179,71,0.12); color: var(--warning); border: 1px solid rgba(255,179,71,0.2); }
-
+    .status-badge.active { background: var(--success-bg); color: var(--success); border: 1px solid rgba(110,207,138,0.35); }
+    .status-badge.trial { background: rgba(138,156,254,0.12); color: var(--accent); border: 1px solid rgba(138,156,254,0.3); }
+    .status-badge.expired { background: rgba(255,92,122,0.12); color: var(--danger); border: 1px solid rgba(255,92,122,0.25); }
     .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.35; } }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
+    /* Traffic ring */
+    .traffic-card { display: flex; gap: 16px; align-items: center; }
+    .ring-wrap { position: relative; width: 88px; height: 88px; flex-shrink: 0; }
+    .ring-wrap svg { transform: rotate(-90deg); }
+    .ring-bg { fill: none; stroke: var(--border); stroke-width: 7; }
+    .ring-fill { fill: none; stroke: url(#ringGrad); stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 1s ease; }
+    .ring-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    .ring-pct { font-size: 18px; font-weight: 800; }
+    .ring-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .traffic-info { flex: 1; }
+    .traffic-row { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; }
+    .traffic-row span:first-child { color: var(--muted); }
+    .traffic-row span:last-child { font-weight: 600; }
+    .unlimited-tag {
+      display: inline-block;
+      background: rgba(138, 156, 254, 0.12);
+      border: 1px solid rgba(138, 156, 254, 0.3);
+      color: var(--accent);
+      padding: 5px 12px; border-radius: var(--pill);
+      font-size: 12px; font-weight: 700;
     }
 
-    /* Progress bar (days left) */
-    .progress-wrap { margin: 14px 0 8px; }
-    .progress-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-    .progress-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    /* Progress */
+    .progress-wrap { margin: 14px 0 4px; }
+    .progress-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+    .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
     .progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--sky-dark), var(--sky));
-      border-radius: 2px;
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+      border-radius: 3px;
       transition: width 1s ease;
-      box-shadow: 0 0 8px rgba(0,198,255,0.5);
+      box-shadow: 0 0 14px var(--accent-glow);
     }
 
-    /* VPN Key block */
-    .key-block {
-      background: rgba(0,198,255,0.04);
-      border: 1px solid rgba(0,198,255,0.12);
+    /* Stats */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stat-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      padding: 12px 14px;
-      margin-top: 12px;
+      padding: 14px 8px;
+      text-align: center;
     }
+    .stat-num { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+    .stat-label { font-size: 10px; color: var(--muted); margin-top: 4px; font-weight: 500; }
 
-    .key-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sky); margin-bottom: 6px; }
-    .key-value {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: var(--text);
-      word-break: break-all;
-      line-height: 1.5;
+    /* Features list */
+    .feat-list { list-style: none; }
+    .feat-list li {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; font-size: 13px;
+      border-bottom: 1px solid var(--border);
     }
+    .feat-list li:last-child { border-bottom: none; }
+    .feat-check { color: var(--success); font-size: 14px; }
 
-    .copy-btn {
-      margin-top: 10px;
-      width: 100%;
-      padding: 10px;
-      background: rgba(0,198,255,0.1);
-      border: 1px solid rgba(0,198,255,0.2);
-      border-radius: var(--radius-sm);
-      color: var(--sky);
-      font-family: 'Sora', sans-serif;
+    /* Servers */
+    .server-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
       font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
     }
-
-    .copy-btn:active { transform: scale(0.98); background: rgba(0,198,255,0.18); }
-
-    /* Stats row */
-    .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 4px; }
-    .stat-item { text-align: center; }
-    .stat-num { font-size: 20px; font-weight: 700; }
-    .stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .server-row:last-child { border-bottom: none; }
+    .server-online { color: var(--success); font-weight: 600; font-size: 12px; }
+    .server-offline { color: var(--danger); font-weight: 600; font-size: 12px; }
+    .server-unknown { color: var(--muted); font-size: 12px; }
 
     /* Plan cards */
     .plan-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 16px;
+      padding: 18px;
       margin-bottom: 10px;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: transform 0.15s, border-color 0.15s;
       position: relative;
-      overflow: hidden;
     }
-
-    .plan-card::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(0,114,255,0.06), transparent);
-      opacity: 0;
-      transition: opacity 0.2s;
-    }
-
-    .plan-card:active { transform: scale(0.99); }
-    .plan-card:active::before { opacity: 1; }
-
+    .plan-card:active { transform: scale(0.98); }
     .plan-card.recommended {
-      border-color: rgba(0,198,255,0.3);
-      background: linear-gradient(135deg, rgba(0,114,255,0.08), rgba(0,198,255,0.04));
+      border-color: rgba(138, 156, 254, 0.4);
+      background: linear-gradient(135deg, rgba(138,156,254,0.1), rgba(80,60,140,0.06));
     }
-
     .rec-badge {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: linear-gradient(90deg, var(--sky-dark), var(--sky));
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 10px;
+      position: absolute; top: 14px; right: 14px;
+      background: rgba(138, 156, 254, 0.2);
+      border: 1px solid rgba(138, 156, 254, 0.35);
+      color: var(--accent); font-size: 10px; font-weight: 800;
+      padding: 4px 12px; border-radius: var(--pill);
+      letter-spacing: 0.06em;
     }
-
-    .plan-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
-    .plan-desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
-    .plan-price { font-size: 22px; font-weight: 800; }
-    .plan-price span { font-size: 13px; font-weight: 400; color: var(--muted); }
-
-    .plan-features { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+    .plan-name { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+    .plan-desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.4; }
+    .plan-price { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+    .plan-price small { font-size: 13px; font-weight: 500; color: var(--muted); }
+    .feat-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
     .feat-tag {
-      background: rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.05);
       border: 1px solid var(--border);
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      color: var(--muted);
+      padding: 4px 9px; border-radius: 8px;
+      font-size: 11px; color: var(--muted); font-weight: 500;
     }
 
-    /* Month selector */
-    .months-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    /* Month grid */
+    .months-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
     .month-btn {
-      padding: 12px;
+      padding: 14px 10px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius-sm);
-      cursor: pointer;
-      text-align: center;
-      transition: all 0.2s;
+      cursor: pointer; text-align: center;
+      transition: all 0.15s;
     }
     .month-btn.selected {
-      border-color: rgba(0,198,255,0.4);
-      background: rgba(0,198,255,0.08);
+      border-color: rgba(138, 156, 254, 0.5);
+      background: rgba(138, 156, 254, 0.12);
+      box-shadow: 0 0 0 1px rgba(138, 156, 254, 0.25);
     }
-    .month-btn:active { transform: scale(0.97); }
-    .month-price { font-size: 16px; font-weight: 700; color: var(--text); }
-    .month-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
-    .month-save { font-size: 10px; color: var(--success); margin-top: 2px; }
+    .month-price { font-size: 17px; font-weight: 800; }
+    .month-label { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .month-save { font-size: 10px; color: var(--success); margin-top: 3px; font-weight: 600; }
 
-    /* Primary button */
+    /* Buttons */
+    .btn {
+      width: 100%; padding: 16px;
+      border: none; border-radius: var(--radius);
+      font-family: inherit; font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: transform 0.15s, opacity 0.15s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary {
-      width: 100%;
-      padding: 15px;
-      background: linear-gradient(135deg, var(--sky-dark), var(--sky));
-      border: none;
-      border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--accent-2), var(--accent));
       color: #fff;
-      font-family: 'Sora', sans-serif;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.2s;
-      box-shadow: 0 4px 20px rgba(0,114,255,0.35);
-      margin-top: 16px;
+      box-shadow: 0 6px 28px var(--accent-glow);
+      margin-top: 14px;
+      letter-spacing: 0.01em;
     }
-    .btn-primary:active { transform: scale(0.99); box-shadow: 0 2px 10px rgba(0,114,255,0.2); }
-
-    /* Empty state */
-    .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
-    .empty .icon { font-size: 48px; margin-bottom: 16px; }
-    .empty p { font-size: 14px; line-height: 1.6; }
-
-    /* Toast */
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%) translateY(80px);
-      background: rgba(0,229,160,0.12);
-      border: 1px solid rgba(0,229,160,0.3);
-      color: var(--success);
-      padding: 12px 20px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
-      z-index: 100;
-      transition: transform 0.3s ease;
+    .btn-ghost {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      margin-top: 10px;
     }
-    .toast.show { transform: translateX(-50%) translateY(0); }
-
-    /* Loader */
-    .loader { display: flex; justify-content: center; padding: 40px; }
-    .spinner {
-      width: 36px; height: 36px;
-      border: 3px solid var(--border);
-      border-top-color: var(--sky);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+    .btn-link {
+      background: none; border: none; color: var(--accent);
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer; padding: 4px 0; margin-bottom: 12px;
+      display: inline-flex; align-items: center; gap: 4px;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Divider */
-    .divider { height: 1px; background: var(--border); margin: 16px 0; }
+    /* Key block */
+    .key-block {
+      background: rgba(138, 156, 254, 0.06);
+      border: 1px solid rgba(138, 156, 254, 0.18);
+      border-radius: var(--radius-sm);
+      padding: 14px; margin-top: 12px;
+    }
+    .key-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+    .key-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; word-break: break-all; line-height: 1.6;
+    }
+    .copy-btn {
+      margin-top: 10px; width: 100%; padding: 11px;
+      background: rgba(138, 156, 254, 0.1);
+      border: 1px solid rgba(138, 156, 254, 0.25);
+      border-radius: var(--pill);
+      color: var(--accent); font-family: inherit;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+    }
 
-    /* Row */
-    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+    /* Info rows */
+    .info-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; }
     .info-row + .info-row { border-top: 1px solid var(--border); }
     .info-key { font-size: 13px; color: var(--muted); }
     .info-val { font-size: 13px; font-weight: 600; }
 
-    .app-footer {
-      text-align: center;
-      padding: 12px 20px 20px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.06em;
-      color: var(--muted);
+    /* Bottom nav */
+    .bottom-nav {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+      padding-bottom: env(safe-area-inset-bottom);
+      background: rgba(10,14,31,0.94);
+      backdrop-filter: blur(20px);
+      border-top: 1px solid var(--border);
+      display: flex; z-index: 50;
     }
-    .app-footer span {
-      background: linear-gradient(90deg, var(--sky), #fff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+    .nav-item {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 4px;
+      background: none; border: none; color: var(--muted);
+      font-family: inherit; font-size: 10px; font-weight: 600;
+      cursor: pointer; transition: color 0.15s;
+      padding-top: 8px;
     }
+    .nav-item .nav-icon { font-size: 22px; line-height: 1; }
+    .nav-item.active { color: var(--accent); }
+
+    /* Loader & empty */
+    .loader { display: flex; justify-content: center; padding: 48px; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty { text-align: center; padding: 40px 16px; color: var(--muted); }
+    .empty .icon { font-size: 44px; margin-bottom: 14px; }
+    .empty p { font-size: 14px; line-height: 1.6; }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: calc(var(--nav-h) + 16px);
+      left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--success-bg);
+      border: 1px solid rgba(110,207,138,0.4);
+      color: var(--success);
+      padding: 12px 20px; border-radius: 20px;
+      font-size: 13px; font-weight: 600;
+      z-index: 200; transition: transform 0.3s ease;
+      max-width: 90%; text-align: center;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.error { background: rgba(255,92,122,0.15); border-color: rgba(255,92,122,0.35); color: var(--danger); }
+
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
 <div class="app">
-
   <header class="header">
     <div class="logo">
-      <div class="logo-icon">🛡</div>
-      <span class="logo-text" id="brandName">VPN</span>
+      <div class="logo-mark" aria-hidden="true">
+        <svg class="radar" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="22" cy="22" r="20" stroke="rgba(138,156,254,0.2)" stroke-width="0.75"/>
+          <circle cx="22" cy="22" r="14" stroke="rgba(138,156,254,0.28)" stroke-width="0.75"/>
+          <circle cx="22" cy="22" r="8" stroke="rgba(138,156,254,0.35)" stroke-width="0.75"/>
+          <circle cx="32" cy="14" r="2" fill="rgba(138,156,254,0.7)"/>
+          <circle cx="12" cy="28" r="1.5" fill="rgba(138,156,254,0.45)"/>
+        </svg>
+        <span class="logo-s">S</span>
+      </div>
+      <span class="logo-text" id="brandName">SKYFLOW VPN</span>
     </div>
-    <div class="user-badge" id="userBadge">...</div>
+    <div class="avatar" id="userAvatar">?</div>
   </header>
 
-  <nav class="nav">
-    <button class="nav-btn active" onclick="showTab('home')">🏠 Главная</button>
-    <button class="nav-btn" onclick="showTab('keys')">🔑 Ключи</button>
-    <button class="nav-btn" onclick="showTab('plans')">💎 Тарифы</button>
-  </nav>
-
-  <!-- HOME TAB -->
+  <!-- HOME / CABINET -->
   <section class="section active" id="tab-home">
-
-    <div id="homeContent">
-      <div class="loader"><div class="spinner"></div></div>
-    </div>
-
+    <div id="homeContent"><div class="loader"><div class="spinner"></div></div></div>
   </section>
 
-  <!-- KEYS TAB -->
+  <!-- KEYS -->
   <section class="section" id="tab-keys">
-    <div id="keysContent">
-      <div class="loader"><div class="spinner"></div></div>
-    </div>
+    <div id="keysContent"><div class="loader"><div class="spinner"></div></div></div>
   </section>
 
-  <!-- PLANS TAB -->
+  <!-- PLANS -->
   <section class="section" id="tab-plans">
-
-    <div id="plansContent">
-      <!-- Dynamic -->
-    </div>
-
-    <!-- Plan detail overlay -->
-    <div id="planDetail" style="display:none">
-      <button onclick="showPlansList()" style="background:none;border:none;color:var(--sky);font-family:Sora,sans-serif;font-size:14px;cursor:pointer;padding:4px 0;margin-bottom:12px">
-        ← Назад к тарифам
-      </button>
-      <div class="card">
+    <div id="plansList"></div>
+    <div id="planDetail" class="hidden">
+      <button class="btn-link" onclick="showPlansList()">← Назад к тарифам</button>
+      <div class="card card-glow">
         <div id="planDetailContent"></div>
-
         <div class="months-grid" id="monthsGrid"></div>
-
-        <button class="btn-primary" id="buyBtn" onclick="handleBuy()">
-          💳 Оплатить
-        </button>
+        <button class="btn btn-primary" id="buyBtn" onclick="handleBuy()">💳 Оплатить</button>
       </div>
     </div>
-
   </section>
 
-  <footer class="app-footer"><span id="footerBrand">VPN</span></footer>
-
+  <!-- SUPPORT -->
+  <section class="section" id="tab-support">
+    <div class="card">
+      <div class="card-title">Поддержка</div>
+      <p style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:16px">
+        Есть вопросы по настройке или оплате? Напиши нам — ответим быстро.
+      </p>
+      <button class="btn btn-primary" id="supportBtn" onclick="openSupport()">💬 Написать в поддержку</button>
+    </div>
+    <div class="card">
+      <div class="card-title">Как подключиться</div>
+      <div class="info-row"><span class="info-key"><span class="brand-pill green" style="font-size:10px;padding:3px 10px">Android</span></span><span class="info-val" style="color:var(--accent)">v2rayNG</span></div>
+      <div class="info-row"><span class="info-key">🍎 iPhone</span><span class="info-val" style="color:var(--accent)">Happ / V2Box</span></div>
+      <div class="info-row"><span class="info-key">💻 Windows</span><span class="info-val" style="color:var(--accent)">Nekoray</span></div>
+      <div class="info-row"><span class="info-key">🍎 macOS</span><span class="info-val" style="color:var(--accent)">V2Box</span></div>
+    </div>
+  </section>
 </div>
 
-<!-- Toast -->
+<nav class="bottom-nav" id="bottomNav">
+  <button class="nav-item active" data-tab="home" onclick="showTab('home')">
+    <span class="nav-icon">🏠</span><span>Главная</span>
+  </button>
+  <button class="nav-item" data-tab="keys" onclick="showTab('keys')">
+    <span class="nav-icon">🔑</span><span>Ключи</span>
+  </button>
+  <button class="nav-item" data-tab="plans" onclick="showTab('plans')">
+    <span class="nav-icon">💎</span><span>Тарифы</span>
+  </button>
+  <button class="nav-item" data-tab="support" onclick="showTab('support')">
+    <span class="nav-icon">💬</span><span>Помощь</span>
+  </button>
+</nav>
+
 <div class="toast" id="toast"></div>
 
-<script>
-  let BRAND_NAME = 'VPN';
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6b7fdb"/>
+      <stop offset="100%" stop-color="#8a9cfe"/>
+    </linearGradient>
+  </defs>
+</svg>
 
+<script>
   const tg = window.Telegram?.WebApp;
   if (tg) {
     tg.ready();
     tg.expand();
-    tg.setHeaderColor('#0a0d14');
-    tg.setBackgroundColor('#0a0d14');
+    tg.setHeaderColor('#0a0e1f');
+    tg.setBackgroundColor('#0a0e1f');
   }
 
-  const API_BASE = '/api';
+  const API = '/api';
   const telegramId = tg?.initDataUnsafe?.user?.id || new URLSearchParams(location.search).get('tg_id') || '0';
-  let userData = null;
-  let subData = null;
+
+  let dashboard = null;
+  let plansData = {};
+  let monthsLabels = {};
+  let supportUrl = 'https://t.me/SkyPathsupport';
   let selectedPlan = null;
   let selectedMonths = 1;
 
-  // === PLANS DATA ===
-  const PLANS = {
-    FREE:  { name: '🆓 Пробный',  price: 0,   devices: 1,  gb: 5,    features: ['3 дня', '1 устройство', '5 ГБ'] },
-    BASIC: { name: '💎 Базовый',  prices: {1:250,2:450,3:650,6:1200,12:2000}, devices: 3, features: ['3 устройства', 'Безлимит', '5 серверов'] },
-    MULTI: { name: '🚀 Мульти',   prices: {1:350,2:650,3:900,6:1700,12:2800}, devices: 5, features: ['5 устройств', 'Безлимит', 'Все серверы'], rec: true },
-    SUPER: { name: '👑 Супер',    prices: {1:450,2:850,3:1200,6:2200,12:3500}, devices:10, features: ['10 устройств', 'Безлимит', 'Приоритет'] },
-  };
-
-  const MONTHS_LABELS = {1:'1 месяц',2:'2 месяца',3:'3 месяца',6:'6 месяцев',12:'Год'};
+  const ACTIVE_STATUSES = ['АКТИВНА', 'ПРОБНЫЙ ПЕРИОД'];
 
   function applyBrand(name) {
-    BRAND_NAME = name || BRAND_NAME;
-    document.title = BRAND_NAME;
-    document.getElementById('brandName').textContent = BRAND_NAME;
-    document.getElementById('footerBrand').textContent = BRAND_NAME;
+    const brand = (name || 'SKYFLOW VPN').toUpperCase();
+    document.title = brand;
+    document.getElementById('brandName').textContent = brand;
   }
 
-  async function loadConfig() {
-    try {
-      const r = await fetch(`${API_BASE}/config`);
-      if (r.ok) {
-        const cfg = await r.json();
-        applyBrand(cfg.brand_name);
-      }
-    } catch { /* offline / dev */ }
-  }
+  const RADAR_SVG = `
+    <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="60" cy="60" r="54" stroke="rgba(138,156,254,0.15)" stroke-width="1"/>
+      <circle cx="60" cy="60" r="38" stroke="rgba(138,156,254,0.22)" stroke-width="1"/>
+      <circle cx="60" cy="60" r="22" stroke="rgba(138,156,254,0.3)" stroke-width="1"/>
+      <circle cx="88" cy="32" r="3" fill="rgba(138,156,254,0.75)"/>
+      <circle cx="28" cy="78" r="2" fill="rgba(138,156,254,0.5)"/>
+    </svg>`;
 
-  // === INIT ===
-  async function init() {
-    await loadConfig();
-
+  function setAvatar() {
     const user = tg?.initDataUnsafe?.user;
-    document.getElementById('userBadge').textContent = user?.first_name ? `@${user.username || user.first_name}` : `ID ${telegramId}`;
-
-    await loadHomeData();
-    renderPlans();
+    const el = document.getElementById('userAvatar');
+    if (user?.first_name) {
+      el.textContent = user.first_name[0].toUpperCase();
+    } else {
+      el.textContent = '?';
+    }
   }
 
-  // === API ===
-  async function fetchUser() {
+  async function loadDashboard() {
     try {
-      const r = await fetch(`${API_BASE}/user/${telegramId}`);
-      return r.ok ? await r.json() : null;
-    } catch { return null; }
+      const r = await fetch(`${API}/dashboard/${telegramId}`);
+      if (r.ok) {
+        dashboard = await r.json();
+        applyBrand(dashboard.brand_name);
+        supportUrl = dashboard.support_url || supportUrl;
+        if (dashboard.plans) plansData = dashboard.plans;
+        return;
+      }
+    } catch { /* offline */ }
+
+    const [cfgR, plansR] = await Promise.all([
+      fetch(`${API}/config`).catch(() => null),
+      fetch(`${API}/plans`).catch(() => null),
+    ]);
+    if (cfgR?.ok) {
+      const cfg = await cfgR.json();
+      applyBrand(cfg.brand_name);
+      supportUrl = cfg.support_url || supportUrl;
+      monthsLabels = cfg.months_labels || {};
+    }
+    if (plansR?.ok) {
+      const p = await plansR.json();
+      plansData = p.plans || {};
+      monthsLabels = p.months_labels || monthsLabels;
+    }
+    dashboard = { has_subscription: false, plans: plansData };
   }
 
-  async function fetchSubscription() {
-    try {
-      const r = await fetch(`${API_BASE}/subscription/${telegramId}`);
-      return r.ok ? await r.json() : null;
-    } catch { return null; }
+  function isActiveSub(sub) {
+    return sub && ACTIVE_STATUSES.includes(sub.status);
   }
 
-  // === HOME ===
-  async function loadHomeData() {
-    [userData, subData] = await Promise.all([fetchUser(), fetchSubscription()]);
-    renderHome();
-    renderKeys();
+  function statusBadgeClass(status) {
+    if (status === 'АКТИВНА') return 'active';
+    if (status === 'ПРОБНЫЙ ПЕРИОД') return 'trial';
+    return 'expired';
   }
 
-  function renderHome() {
-    const el = document.getElementById('homeContent');
+  function formatDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
 
-    if (!subData || !subData.status) {
-      el.innerHTML = `
-        <div class="card">
-          <div class="empty">
-            <div class="icon">🛡</div>
-            <p>У тебя нет активной подписки.<br>Выбери тариф и получи VPN за минуту!</p>
-          </div>
-          <button class="btn-primary" onclick="showTab('plans')">🚀 Выбрать тариф</button>
+  function formatGb(gb) {
+    if (gb >= 1) return `${gb.toFixed(1)} ГБ`;
+    return `${(gb * 1024).toFixed(0)} МБ`;
+  }
+
+  function trafficRing(pct) {
+    const r = 36;
+    const circ = 2 * Math.PI * r;
+    const offset = circ - (Math.min(100, pct) / 100) * circ;
+    return `
+      <div class="ring-wrap">
+        <svg width="88" height="88" viewBox="0 0 88 88">
+          <circle class="ring-bg" cx="44" cy="44" r="${r}"/>
+          <circle class="ring-fill" cx="44" cy="44" r="${r}"
+            stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
+        </svg>
+        <div class="ring-center">
+          <div class="ring-pct">${pct}%</div>
+          <div class="ring-label">трафик</div>
         </div>
-      `;
-      return;
+      </div>`;
+  }
+
+  function renderTrafficCard(traffic, trafficGb) {
+    if (!traffic) {
+      const unlimited = !trafficGb || trafficGb === 0;
+      if (unlimited) {
+        return `<div class="traffic-card"><div class="unlimited-tag">♾ Безлимитный трафик</div></div>`;
+      }
+      return `<div class="traffic-card"><div class="traffic-info"><div class="traffic-row"><span>Лимит</span><span>${trafficGb} ГБ</span></div></div></div>`;
     }
 
-    const isActive = subData.status === 'АКТИВНА';
-    const badgeClass = isActive ? 'active' : (subData.status === 'ИСТЕКЛА' ? 'expired' : 'pending');
-    const daysLeft = subData.days_left || 0;
-    const totalDays = subData.months_paid ? subData.months_paid * 30 : 30;
-    const pct = Math.max(0, Math.min(100, (daysLeft / totalDays) * 100));
-    const expires = subData.expires_at ? new Date(subData.expires_at).toLocaleDateString('ru-RU') : '—';
-
-    el.innerHTML = `
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
-          <div>
-            <div class="card-title">Статус подписки</div>
-            <div class="plan-name">${subData.plan || '—'}</div>
+    if (traffic.unlimited) {
+      return `
+        <div class="traffic-card">
+          <div class="unlimited-tag">♾ Безлимитный трафик</div>
+          <div class="traffic-info" style="margin-top:8px">
+            <div class="traffic-row"><span>Использовано</span><span>${formatGb(traffic.used_gb)}</span></div>
+            <div class="traffic-row"><span>Загрузка ↑</span><span>${formatGb(traffic.up_bytes / (1024**3))}</span></div>
+            <div class="traffic-row"><span>Скачивание ↓</span><span>${formatGb(traffic.down_bytes / (1024**3))}</span></div>
           </div>
-          <span class="status-badge ${badgeClass}">
-            <span class="status-dot"></span>
-            ${subData.status}
+        </div>`;
+    }
+
+    const pct = traffic.usage_percent || 0;
+    return `
+      <div class="traffic-card">
+        ${trafficRing(pct)}
+        <div class="traffic-info">
+          <div class="traffic-row"><span>Использовано</span><span>${formatGb(traffic.used_gb)}</span></div>
+          <div class="traffic-row"><span>Лимит</span><span>${formatGb(traffic.limit_gb)}</span></div>
+          <div class="traffic-row"><span>Осталось</span><span>${formatGb(Math.max(0, traffic.limit_gb - traffic.used_gb))}</span></div>
+        </div>
+      </div>`;
+  }
+
+  function renderServers(servers) {
+    if (!servers?.length) return '';
+    return servers.map(s => {
+      let statusClass = 'server-unknown';
+      let statusText = '—';
+      if (s.online === true) { statusClass = 'server-online'; statusText = '● Онлайн'; }
+      else if (s.online === false) { statusClass = 'server-offline'; statusText = '● Офлайн'; }
+      return `<div class="server-row"><span>${s.name}</span><span class="${statusClass}">${statusText}</span></div>`;
+    }).join('');
+  }
+
+  function renderCabinet() {
+    const sub = dashboard?.subscription;
+    const user = dashboard?.user;
+    const servers = dashboard?.servers || [];
+
+    if (!sub || !isActiveSub(sub)) {
+      return renderNewUserLanding();
+    }
+
+    const daysLeft = sub.days_left || 0;
+    const totalDays = sub.months_paid ? sub.months_paid * 30 : (sub.status === 'ПРОБНЫЙ ПЕРИОД' ? 3 : 30);
+    const pct = Math.max(0, Math.min(100, (daysLeft / totalDays) * 100));
+    const features = sub.plan_info?.features || [];
+
+    return `
+      <div class="card card-glow">
+        <div class="status-row">
+          <div>
+            <div style="margin-bottom:8px"><span class="brand-pill">SKYFLOW VPN</span></div>
+            <div class="plan-title">${sub.plan_name || sub.plan}</div>
+          </div>
+          <span class="status-badge ${statusBadgeClass(sub.status)}">
+            <span class="status-dot"></span>${sub.status}
           </span>
         </div>
 
-        ${isActive ? `
         <div class="progress-wrap">
           <div class="progress-label">
-            <span>Осталось <b>${daysLeft} дней</b></span>
-            <span>до ${expires}</span>
+            <span>Осталось <b>${daysLeft} дн.</b></span>
+            <span>до ${formatDate(sub.expires_at)}</span>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width:${pct}%"></div>
-          </div>
-        </div>
-        ` : ''}
-
-        <div class="stats-row" style="margin-top:16px">
-          <div class="stat-item">
-            <div class="stat-num" style="color:var(--sky)">${daysLeft}</div>
-            <div class="stat-label">дней осталось</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-num" style="color:var(--success)">${subData.limit_ip || 1}</div>
-            <div class="stat-label">устройств</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-num" style="color:var(--warning)">${subData.months_paid || 0}</div>
-            <div class="stat-label">мес. оплачено</div>
-          </div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-title">Мои серверы</div>
-        ${['🇷🇺 Россия', '🇺🇸 США', '🇩🇪 Германия', '🇳🇱 Нидерланды', '🇰🇿 Казахстан'].map(s => `
-          <div class="info-row">
-            <span class="info-key">${s}</span>
-            <span class="info-val" style="color:var(--success)">● Онлайн</span>
-          </div>
-        `).join('')}
+        <div class="card-title">Трафик</div>
+        ${renderTrafficCard(sub.traffic, sub.traffic_gb)}
       </div>
 
-      ${!isActive ? `<button class="btn-primary" onclick="showTab('plans')">🔄 Продлить подписку</button>` : ''}
+      <div class="stats-grid" style="margin-bottom:12px">
+        <div class="stat-box">
+          <div class="stat-num" style="color:var(--accent)">${daysLeft}</div>
+          <div class="stat-label">дней</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" style="color:var(--success)">${sub.limit_ip || 1}</div>
+          <div class="stat-label">устройств</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-num" style="color:var(--warning)">${sub.months_paid || '—'}</div>
+          <div class="stat-label">мес. оплачено</div>
+        </div>
+      </div>
+
+      ${features.length ? `
+      <div class="card">
+        <div class="card-title">Условия тарифа</div>
+        <ul class="feat-list">
+          ${features.map(f => `<li><span class="feat-check">✓</span>${f}</li>`).join('')}
+        </ul>
+      </div>` : ''}
+
+      ${servers.length ? `
+      <div class="card">
+        <div class="card-title">Серверы</div>
+        ${renderServers(servers)}
+      </div>` : ''}
+
+      <button class="btn btn-primary" onclick="showTab('keys')">🔑 Мои ключи</button>
+      <button class="btn btn-ghost" onclick="showTab('plans')">🔄 Продлить / сменить тариф</button>
     `;
   }
 
-  // === KEYS ===
+  function renderNewUserLanding() {
+    return `
+      <div class="hero">
+        <div class="hero-badge"><span class="brand-pill">SKYFLOW VPN</span></div>
+        <div class="hero-radar">
+          ${RADAR_SVG}
+          <span class="logo-s">S</span>
+        </div>
+        <h1>Работает везде.<br><span class="accent">Всегда.</span></h1>
+        <p>Быстрый, надёжный VPN для всех устройств. YouTube в 4K, стриминг без буферизации.</p>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:18px">
+        <span class="brand-pill green">🎁 3 дня бесплатно</span>
+        <span class="brand-pill">⚡ Быстрый</span>
+        <span class="brand-pill">🌍 Везде</span>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:16px">
+        <div class="stat-box"><div class="stat-num" style="color:var(--accent)">5</div><div class="stat-label">серверов</div></div>
+        <div class="stat-box"><div class="stat-num" style="color:var(--success)">10</div><div class="stat-label">устройств</div></div>
+        <div class="stat-box"><div class="stat-num" style="color:var(--warning)">4K</div><div class="stat-label">стриминг</div></div>
+      </div>
+
+      <button class="btn btn-primary" onclick="showTab('plans')">Выбрать тариф</button>
+    `;
+  }
+
+  function renderHome() {
+    document.getElementById('homeContent').innerHTML =
+      dashboard?.has_subscription ? renderCabinet() : renderNewUserLanding();
+  }
+
   function renderKeys() {
     const el = document.getElementById('keysContent');
+    const sub = dashboard?.subscription;
 
-    if (!subData || !subData.vpn_key) {
+    if (!sub?.vpn_key) {
       el.innerHTML = `
         <div class="empty">
           <div class="icon">🔑</div>
-          <p>VPN ключи появятся здесь после покупки подписки</p>
+          <p>VPN ключи появятся здесь после оформления подписки</p>
         </div>
-        <button class="btn-primary" onclick="showTab('plans')">💎 Купить подписку</button>
-      `;
+        <button class="btn btn-primary" onclick="showTab('plans')">💎 Выбрать тариф</button>`;
       return;
     }
 
-    const expires = subData.expires_at ? new Date(subData.expires_at).toLocaleDateString('ru-RU') : '—';
-
     el.innerHTML = `
-      <div class="card">
+      <div class="card card-glow">
         <div class="card-title">Активный ключ</div>
-        <div class="info-row">
-          <span class="info-key">Тариф</span>
-          <span class="info-val">${subData.plan || '—'}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">Действует до</span>
-          <span class="info-val">${expires}</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">Устройств</span>
-          <span class="info-val">${subData.limit_ip || 1}</span>
-        </div>
-
+        <div class="info-row"><span class="info-key">Тариф</span><span class="info-val">${sub.plan_name || sub.plan}</span></div>
+        <div class="info-row"><span class="info-key">Статус</span><span class="info-val">${sub.status}</span></div>
+        <div class="info-row"><span class="info-key">Действует до</span><span class="info-val">${formatDate(sub.expires_at)}</span></div>
+        <div class="info-row"><span class="info-key">Устройств</span><span class="info-val">${sub.limit_ip || 1}</span></div>
         <div class="key-block">
           <div class="key-label">🔗 Ссылка для подключения</div>
-          <div class="key-value" id="vpnKey">${subData.vpn_key}</div>
-          <button class="copy-btn" onclick="copyKey()">📋 Скопировать ключ</button>
+          <div class="key-value" id="vpnKey">${sub.vpn_key}</div>
+          <button class="copy-btn" onclick="copyKey()">📋 Скопировать</button>
         </div>
       </div>
-
       <div class="card">
-        <div class="card-title">Как подключиться</div>
-        <div class="info-row">
-          <span class="info-key">📱 Android</span>
-          <span class="info-val" style="color:var(--sky)">v2rayNG</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">🍎 iPhone</span>
-          <span class="info-val" style="color:var(--sky)">Happ / V2Box</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">💻 Windows</span>
-          <span class="info-val" style="color:var(--sky)">Nekoray</span>
-        </div>
-        <div class="info-row">
-          <span class="info-key">🍎 macOS</span>
-          <span class="info-val" style="color:var(--sky)">V2Box</span>
-        </div>
-      </div>
-    `;
+        <div class="card-title">Быстрая настройка</div>
+        <p style="font-size:13px;color:var(--muted);line-height:1.6">
+          Скопируй ссылку → открой VPN-приложение → вставь → подключись. Подробные инструкции — во вкладке «Помощь».
+        </p>
+      </div>`;
   }
 
-  function copyKey() {
-    const key = document.getElementById('vpnKey')?.textContent;
-    if (!key) return;
-    navigator.clipboard?.writeText(key).then(() => showToast('✅ Ключ скопирован!')).catch(() => {
-      // Fallback
-      const ta = document.createElement('textarea');
-      ta.value = key;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-      showToast('✅ Ключ скопирован!');
-    });
-    tg?.HapticFeedback?.notificationOccurred('success');
-  }
-
-  // === PLANS ===
   function renderPlans() {
-    const el = document.getElementById('plansContent');
+    const plans = Object.keys(plansData).length ? plansData : (dashboard?.plans || {});
+    const el = document.getElementById('plansList');
     let html = '';
 
-    for (const [key, plan] of Object.entries(PLANS)) {
-      const fromPrice = plan.prices ? Math.min(...Object.values(plan.prices)) : 0;
-      html += `
-        <div class="plan-card ${plan.rec ? 'recommended' : ''}" onclick="showPlanDetail('${key}')">
-          ${plan.rec ? '<span class="rec-badge">Топ</span>' : ''}
-          <div class="plan-name">${plan.name}</div>
-          <div class="plan-price">
-            ${plan.prices ? `${fromPrice}<span> руб/мес</span>` : `<span>Бесплатно</span>`}
-          </div>
-          <div class="plan-features">
-            ${plan.features.map(f => `<span class="feat-tag">${f}</span>`).join('')}
-          </div>
-        </div>
-      `;
+    if (dashboard?.has_subscription) {
+      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">
+        Продли подписку или выбери новый тариф — ключ обновится автоматически.
+      </p>`;
     }
 
-    el.innerHTML = html;
+    for (const [key, plan] of Object.entries(plans)) {
+      const fromPrice = plan.prices ? Math.min(...Object.values(plan.prices)) : 0;
+      html += `
+        <div class="plan-card ${plan.recommended ? 'recommended' : ''}" onclick="showPlanDetail('${key}')">
+          ${plan.recommended ? '<span class="rec-badge">ТОП</span>' : ''}
+          <div class="plan-name">${plan.name}</div>
+          <div class="plan-desc">${plan.description || ''}</div>
+          <div class="plan-price">
+            ${plan.prices ? `${fromPrice}<small> ₽/мес</small>` : '<small>Бесплатно</small>'}
+          </div>
+          <div class="feat-tags">
+            ${(plan.features || []).slice(0, 3).map(f => `<span class="feat-tag">${f}</span>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    el.innerHTML = html || '<div class="empty"><p>Тарифы загружаются...</p></div>';
   }
 
   function showPlanDetail(planKey) {
     selectedPlan = planKey;
     selectedMonths = 1;
-    const plan = PLANS[planKey];
+    const plan = plansData[planKey] || dashboard?.plans?.[planKey];
+    if (!plan) return;
 
-    document.getElementById('plansContent').style.display = 'none';
-    document.getElementById('planDetail').style.display = 'block';
+    document.getElementById('plansList').classList.add('hidden');
+    document.getElementById('planDetail').classList.remove('hidden');
 
-    const detail = document.getElementById('planDetailContent');
-    detail.innerHTML = `
-      <div style="margin-bottom:16px">
-        <div class="plan-name">${plan.name}</div>
-        <div class="plan-features" style="margin-top:8px">
-          ${plan.features.map(f => `<span class="feat-tag">✓ ${f}</span>`).join('')}
-        </div>
-      </div>
-      <div class="divider"></div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Выбери срок:</div>
-    `;
+    document.getElementById('planDetailContent').innerHTML = `
+      <div class="plan-name" style="margin-bottom:8px">${plan.name}</div>
+      <div class="feat-tags" style="margin-bottom:4px">
+        ${(plan.features || []).map(f => `<span class="feat-tag">✓ ${f}</span>`).join('')}
+      </div>`;
+
+    const grid = document.getElementById('monthsGrid');
+    const buyBtn = document.getElementById('buyBtn');
 
     if (!plan.prices) {
-      // Free
-      document.getElementById('monthsGrid').innerHTML = '';
-      document.getElementById('buyBtn').textContent = '🎁 Получить бесплатно';
+      grid.innerHTML = '';
+      buyBtn.textContent = '🎁 Получить бесплатно';
     } else {
-      const grid = document.getElementById('monthsGrid');
       grid.innerHTML = Object.entries(plan.prices).map(([m, p]) => {
         const base = plan.prices[1] * m;
         const save = base - p;
+        const label = monthsLabels[m] || `${m} мес.`;
         return `
           <div class="month-btn ${m == 1 ? 'selected' : ''}" id="month_${m}" onclick="selectMonth(${m}, ${p})">
             <div class="month-price">${p} ₽</div>
-            <div class="month-label">${MONTHS_LABELS[m]}</div>
-            ${save > 0 ? `<div class="month-save">−${save}₽</div>` : ''}
-          </div>
-        `;
+            <div class="month-label">${label}</div>
+            ${save > 0 ? `<div class="month-save">−${save} ₽</div>` : ''}
+          </div>`;
       }).join('');
-
       updateBuyBtn();
     }
 
     tg?.HapticFeedback?.selectionChanged();
+  }
+
+  function showPlansList() {
+    document.getElementById('plansList').classList.remove('hidden');
+    document.getElementById('planDetail').classList.add('hidden');
   }
 
   function selectMonth(months, price) {
@@ -747,19 +936,14 @@
   }
 
   function updateBuyBtn() {
-    const plan = PLANS[selectedPlan];
+    const plan = plansData[selectedPlan] || dashboard?.plans?.[selectedPlan];
     if (!plan?.prices) return;
-    const price = plan.prices[selectedMonths];
-    document.getElementById('buyBtn').textContent = `💳 Оплатить ${price} руб.`;
-  }
-
-  function showPlansList() {
-    document.getElementById('plansContent').style.display = 'block';
-    document.getElementById('planDetail').style.display = 'none';
+    document.getElementById('buyBtn').textContent = `💳 Оплатить ${plan.prices[selectedMonths]} ₽`;
   }
 
   async function handleBuy() {
-    const plan = PLANS[selectedPlan];
+    const plan = plansData[selectedPlan] || dashboard?.plans?.[selectedPlan];
+    if (!plan) return;
     const price = plan.prices ? plan.prices[selectedMonths] : 0;
     const user = tg?.initDataUnsafe?.user;
     const btn = document.getElementById('buyBtn');
@@ -768,7 +952,7 @@
     btn.disabled = true;
 
     try {
-      const r = await fetch(`${API_BASE}/pay`, {
+      const r = await fetch(`${API}/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -781,15 +965,12 @@
           last_name: user?.last_name,
         }),
       });
-
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        throw new Error(data.message || data.error || 'Не удалось оформить заказ');
-      }
+      if (!r.ok) throw new Error(data.message || data.error || 'Не удалось оформить заказ');
 
       if (data.free_trial) {
         showToast('✅ ' + (data.message || 'Пробный период активирован'));
-        await loadHomeData();
+        await refresh();
         showTab('keys');
         return;
       }
@@ -798,33 +979,70 @@
         showToast('💳 Открой оплату — ключ придёт в бот');
         if (tg?.openLink) tg.openLink(data.payment_url);
         else window.open(data.payment_url, '_blank');
-        setTimeout(() => tg?.close(), 500);
+        setTimeout(() => tg?.close(), 600);
         return;
       }
-
       throw new Error('Пустой ответ сервера');
     } catch (e) {
-      showToast('❌ ' + (e.message || 'Ошибка'));
+      showToast('❌ ' + (e.message || 'Ошибка'), true);
     } finally {
       btn.disabled = false;
     }
   }
 
-  // === TABS ===
+  function copyKey() {
+    const key = document.getElementById('vpnKey')?.textContent;
+    if (!key) return;
+    const done = () => { showToast('✅ Скопировано!'); tg?.HapticFeedback?.notificationOccurred('success'); };
+    navigator.clipboard?.writeText(key).then(done).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = key; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); ta.remove();
+      done();
+    });
+  }
+
+  function openSupport() {
+    if (tg?.openTelegramLink) tg.openTelegramLink(supportUrl);
+    else if (tg?.openLink) tg.openLink(supportUrl);
+    else window.open(supportUrl, '_blank');
+  }
+
   function showTab(tab) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
     document.getElementById(`tab-${tab}`)?.classList.add('active');
-    document.querySelector(`[onclick="showTab('${tab}')"]`)?.classList.add('active');
+    document.querySelector(`.nav-item[data-tab="${tab}"]`)?.classList.add('active');
+
+    if (tab === 'plans') {
+      showPlansList();
+      renderPlans();
+    }
     tg?.HapticFeedback?.selectionChanged();
   }
 
-  // === TOAST ===
-  function showToast(msg) {
+  function showToast(msg, isError = false) {
     const t = document.getElementById('toast');
     t.textContent = msg;
+    t.classList.toggle('error', isError);
     t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 2500);
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
+
+  async function refresh() {
+    await loadDashboard();
+    renderHome();
+    renderKeys();
+    renderPlans();
+  }
+
+  async function init() {
+    setAvatar();
+    await refresh();
+
+    if (!dashboard?.has_subscription) {
+      showTab('home');
+    }
   }
 
   init();
