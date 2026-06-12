@@ -383,6 +383,8 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         if body.get("expires_at"):
             expires_at = datetime.fromisoformat(body["expires_at"].replace("Z", ""))
 
+        from bot.services.xui_sync import push_subscription_to_xui
+
         async with async_session() as session:
             repo = AdminRepo(session)
             sub = await repo.update_subscription(
@@ -394,19 +396,29 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
                 extend_months=body.get("extend_months"),
                 limit_ip=body.get("limit_ip"),
                 vpn_key=body.get("vpn_key"),
+                disable_vpn=bool(body.get("disable")),
             )
-        if not sub:
-            return _error("Subscription not found", 404)
-        return _json(_sub_json(sub))
+            if not sub:
+                return _error("Subscription not found", 404)
+            xui_result = await push_subscription_to_xui(sub)
+
+        data = _sub_json(sub)
+        data["xui_sync"] = xui_result.to_dict()
+        return _json(data)
 
     async def subs_delete(request: web.Request) -> web.Response:
         sub_id = int(request.match_info["sub_id"])
+        from bot.services.xui_sync import delete_subscription_from_xui
+
         async with async_session() as session:
             repo = AdminRepo(session)
+            sub = await repo.get_subscription(sub_id)
+            if not sub:
+                return _error("Subscription not found", 404)
+            xui_result = await delete_subscription_from_xui(sub)
             ok = await repo.delete_subscription(sub_id)
-        if not ok:
-            return _error("Subscription not found", 404)
-        return _json({"ok": True})
+
+        return _json({"ok": ok, "xui_sync": xui_result.to_dict()})
 
     # ── 3X-UI sync ─────────────────────────────────────────────
 

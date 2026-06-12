@@ -451,10 +451,15 @@ class AdminRepo:
         extend_months: int | None = None,
         limit_ip: int | None = None,
         vpn_key: str | None = None,
+        disable_vpn: bool = False,
     ) -> Subscription | None:
         sub = await self.get_subscription(sub_id)
         if not sub:
             return None
+
+        if disable_vpn:
+            sub.status = SubscriptionStatus.BLOCKED
+            sub.vpn_disabled_at = datetime.utcnow()
 
         if status:
             sub.status = SubscriptionStatus(status)
@@ -472,6 +477,7 @@ class AdminRepo:
             sub.status = SubscriptionStatus.ACTIVE
             sub.notified_1day = False
             sub.notified_expired = False
+            sub.vpn_disabled_at = None
         if extend_months:
             base = max(sub.expires_at, datetime.utcnow()) if sub.expires_at else datetime.utcnow()
             sub.expires_at = base + timedelta(days=30 * extend_months)
@@ -479,6 +485,13 @@ class AdminRepo:
             sub.status = SubscriptionStatus.ACTIVE
             sub.notified_1day = False
             sub.notified_expired = False
+            sub.vpn_disabled_at = None
+
+        if sub.status in ACTIVE_SUBSCRIPTION_STATUSES:
+            sub.vpn_disabled_at = None
+        elif sub.status in (SubscriptionStatus.EXPIRED, SubscriptionStatus.BLOCKED):
+            if not sub.vpn_disabled_at:
+                sub.vpn_disabled_at = datetime.utcnow()
 
         sub.updated_at = datetime.utcnow()
         await self.session.commit()

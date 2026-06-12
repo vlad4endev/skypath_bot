@@ -231,3 +231,85 @@ async def bulk_sync_from_xui(
             result.errors += 1
 
     return result
+
+
+ACTIVE_XUI_STATUSES = (SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL)
+
+
+@dataclass
+class PushResult:
+    ok: bool
+    skipped: bool = False
+    message: str = ""
+    enabled: bool | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "skipped": self.skipped,
+            "message": self.message,
+            "enabled": self.enabled,
+        }
+
+
+def subscription_should_be_enabled(sub: Subscription) -> bool:
+    if sub.status not in ACTIVE_XUI_STATUSES:
+        return False
+    if sub.expires_at and sub.expires_at < datetime.utcnow():
+        return False
+    return True
+
+
+async def push_subscription_to_xui(sub: Subscription) -> PushResult:
+    """Применить подписку из БД к клиенту в 3X-UI (срок, enable, лимиты)."""
+    if not all([sub.vpn_uuid, sub.vpn_email, sub.vpn_sub_id, sub.inbound_id]):
+        return PushResult(
+            ok=True,
+            skipped=True,
+            message="VPN-клиент не создан — синхронизация с 3X-UI не требуется",
+        )
+
+    enable = subscription_should_be_enabled(sub)
+    expiry_unix: int | None = None
+    if sub.expires_at:
+        expiry_unix = xui._expiry_unix_from_datetime(sub.expires_at)
+    elif enable:
+        expiry_unix = xui._expiry_unix(1)
+
+    try:
+        await xui.update_client(
+            inbound_id=sub.inbound_id,
+            client_uuid=sub.vpn_uuid,
+            email=sub.vpn_email,
+            sub_id=sub.vpn_sub_id,
+            telegram_id=sub.telegram_id,
+            limit_ip=sub.limit_ip,
+            expiry_unix=expiry_unix,
+            enable=enable,
+            traffic_gb=sub.traffic_gb or 0,
+        )
+        exp = sub.expires_at.strftime("%d.%m.%Y %H:%M") if sub.expires_at else "—"
+        state = "включён" if enable else "отключён"
+        return PushResult(
+            ok=True,
+            message=f"3X-UI: клиент {state}, срок до {exp}",
+            enabled=enable,
+        )
+    except Exception as e:
+        logger.exception("push_subscription_to_xui failed sub=%s", sub.id)
+        return PushResult(ok=False, message=f"3X-UI: {e}")
+
+
+async def delete_subscription_from_xui(sub: Subscription) -> PushResult:
+    if not sub.vpn_uuid or not sub.inbound_id:
+        return PushResult(ok=True, skipped=True, message="Нет клиента в 3X-UI")
+    try:
+        await xui.delete_client(
+            sub.inbound_id,
+            sub.vpn_uuid,
+            sub.vpn_email or "",
+        )
+        return PushResult(ok=True, message="Клиент удалён из 3X-UI")
+    except Exception as e:
+        logger.exception("delete_subscription_from_xui failed sub=%s", sub.id)
+        return PushResult(ok=False, message=f"3X-UI: {e}")

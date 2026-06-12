@@ -213,6 +213,10 @@ class XUIClient:
         expire_date = expire_date.replace(hour=23, minute=59, second=59, microsecond=0)
         return int(expire_date.timestamp() * 1000)
 
+    def _expiry_unix_from_datetime(self, dt: datetime) -> int:
+        expire_date = dt.replace(hour=23, minute=59, second=59, microsecond=0)
+        return int(expire_date.timestamp() * 1000)
+
     def _build_client_payload(
         self,
         *,
@@ -636,18 +640,23 @@ class XUIClient:
         email: str,
         sub_id: str,
         telegram_id: int,
-        months: int,
         limit_ip: int,
+        *,
+        months: int = 0,
+        expiry_unix: int | None = None,
         enable: bool = True,
+        traffic_gb: int = 0,
     ) -> bool:
-        expiry = self._expiry_unix(months)
+        if expiry_unix is None:
+            expiry_unix = self._expiry_unix(months)
+        traffic_bytes = int(traffic_gb * (1024 ** 3)) if traffic_gb > 0 else 0
         client = self._build_client_payload(
             client_uuid=client_uuid,
             email=email,
             sub_id=sub_id,
             telegram_id=telegram_id,
-            expiry=expiry,
-            traffic_bytes=0,
+            expiry=expiry_unix,
+            traffic_bytes=traffic_bytes,
             limit_ip=limit_ip,
             enable=enable,
         )
@@ -727,8 +736,8 @@ class XUIClient:
             email=email,
             sub_id=sub_id,
             telegram_id=telegram_id,
-            months=0,
             limit_ip=limit_ip,
+            months=0,
             enable=False,
         )
 

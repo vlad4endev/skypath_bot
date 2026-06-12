@@ -371,7 +371,7 @@ function buildUserCardHtml(u) {
           <td>${s.months_paid || '—'}</td>
           <td>${s.limit_ip}</td>
           <td>${s.vpn_key ? '✅' : '—'}</td>
-          <td><button class="btn btn-ghost btn-sm" onclick="closeModal();editSub(${s.id})">✏️</button></td>
+          <td><button class="btn btn-ghost btn-sm" onclick="closeModal();editSub(${s.id}, ${u.id})">✏️</button></td>
         </tr>`).join('')}
       </tbody></table></div>` : '<p class="empty">Нет подписок</p>'}
 
@@ -445,7 +445,18 @@ async function deleteUser(id) {
 
 // ── Subscription edit (from user card) ───────────────────────
 
-async function editSub(id) {
+let _subEditUserId = null;
+
+function toDatetimeLocal(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function editSub(id, userId = null) {
+  _subEditUserId = userId;
   const s = await api(`/subscriptions/${id}`);
   const statuses = (config.subscription_statuses || []).map(st =>
     `<option value="${st}" ${st === s.status ? 'selected' : ''}>${st}</option>`
@@ -453,51 +464,110 @@ async function editSub(id) {
   const plans = (config.plan_types || []).map(p =>
     `<option value="${p}" ${p === s.plan ? 'selected' : ''}>${p}</option>`
   ).join('');
+  const hasVpn = !!(s.vpn_uuid && s.vpn_email);
   showModal(`
     <div class="modal-header"><h3>Подписка #${s.id}</h3><button class="btn btn-ghost btn-icon" onclick="closeModal()">✕</button></div>
     <div class="modal-body">
+      <p class="tg-warn" style="margin-bottom:14px">
+        Изменения сохраняются в БД и сразу отправляются в <b>3X-UI</b>
+        ${hasVpn ? '(клиент: ' + esc(s.vpn_email) + ')' : '— VPN-клиент не создан'}
+      </p>
       <div class="detail-grid">
         <div class="detail-item"><label>Telegram</label><span class="mono">${s.telegram_id}</span></div>
-        <div class="detail-item"><label>Дней осталось</label><span>${s.days_left}</span></div>
+        <div class="detail-item"><label>Осталось</label><span>${s.is_active ? s.days_left + ' дн.' : '—'}</span></div>
+        <div class="detail-item"><label>Sub ID</label><span class="mono truncate">${s.vpn_sub_id || '—'}</span></div>
+        <div class="detail-item"><label>Inbound</label><span>${s.inbound_id || '—'}</span></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>План</label><select id="edit-sub-plan">${plans}</select></div>
         <div class="form-group"><label>Статус</label><select id="edit-sub-status">${statuses}</select></div>
       </div>
+      <div class="form-group"><label>Окончание (точная дата)</label><input id="edit-sub-expires" type="datetime-local" value="${toDatetimeLocal(s.expires_at)}"></div>
       <div class="form-row">
-        <div class="form-group"><label>Продлить (дней)</label><input id="edit-sub-days" type="number" placeholder="0"></div>
-        <div class="form-group"><label>Продлить (мес)</label><input id="edit-sub-months" type="number" placeholder="0"></div>
+        <div class="form-group"><label>+ дней</label><input id="edit-sub-days" type="number" min="0" placeholder="0"></div>
+        <div class="form-group"><label>+ месяцев</label><input id="edit-sub-months" type="number" min="0" placeholder="0"></div>
       </div>
-      <div class="form-group"><label>Устройств</label><input id="edit-sub-ip" type="number" value="${s.limit_ip}"></div>
-      <div class="form-group"><label>VPN ключ</label><textarea id="edit-sub-key" rows="3">${esc(s.vpn_key || '')}</textarea></div>
+      <div class="quick-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('edit-sub-days').value=7">+7 дней</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('edit-sub-days').value=30">+30 дней</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('edit-sub-months').value=1">+1 мес</button>
+        <button type="button" class="btn btn-success btn-sm" onclick="document.getElementById('edit-sub-status').value='АКТИВНА'">Включить</button>
+        <button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('edit-sub-status').value='ЗАБЛОКИРОВАНА'">Отключить</button>
+      </div>
+      <div class="form-group"><label>Устройств (limitIp)</label><input id="edit-sub-ip" type="number" min="1" value="${s.limit_ip}"></div>
       <div id="edit-sub-error" class="error-msg hidden"></div>
+      <div id="edit-sub-xui" class="hidden" style="margin-top:10px;padding:10px;border-radius:8px;font-size:13px"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Отмена</button>
-      <button class="btn btn-primary" onclick="saveSub(${id})">Сохранить</button>
+      <button class="btn btn-danger btn-sm" onclick="disableSub(${id})">⛔ Отключить VPN</button>
+      <button class="btn btn-primary" onclick="saveSub(${id})">Сохранить → 3X-UI</button>
     </div>
-  `);
+  `, 'modal-lg');
+}
+
+async function disableSub(id) {
+  if (!confirm('Отключить VPN у клиента в 3X-UI и заблокировать подписку?')) return;
+  try {
+    const res = await api(`/subscriptions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ disable: true }),
+    });
+    showXuiFeedback(res.xui_sync);
+    setTimeout(() => {
+      closeModal();
+      if (_subEditUserId) viewUser(_subEditUserId);
+      else loadUsers();
+    }, 1200);
+  } catch (e) {
+    const el = document.getElementById('edit-sub-error');
+    if (el) { el.textContent = e.message; el.classList.remove('hidden'); }
+  }
+}
+
+function showXuiFeedback(xui) {
+  const el = document.getElementById('edit-sub-xui');
+  if (!el || !xui) return;
+  el.classList.remove('hidden');
+  el.style.background = xui.ok ? 'rgba(34,197,94,.12)' : 'rgba(239,68,68,.12)';
+  el.style.color = xui.ok ? 'var(--success)' : 'var(--danger)';
+  el.textContent = xui.message || (xui.skipped ? '3X-UI: пропущено' : 'Готово');
 }
 
 async function saveSub(id) {
+  const errEl = document.getElementById('edit-sub-error');
+  errEl?.classList.add('hidden');
   try {
     const body = {
       plan: document.getElementById('edit-sub-plan').value,
       status: document.getElementById('edit-sub-status').value,
       limit_ip: +document.getElementById('edit-sub-ip').value,
-      vpn_key: document.getElementById('edit-sub-key').value,
     };
+    const exp = document.getElementById('edit-sub-expires').value;
     const days = document.getElementById('edit-sub-days').value;
     const months = document.getElementById('edit-sub-months').value;
+    if (exp) body.expires_at = new Date(exp).toISOString();
     if (days) body.extend_days = +days;
     if (months) body.extend_months = +months;
-    await api(`/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
-    closeModal();
-    loadUsers();
+
+    const res = await api(`/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+    showXuiFeedback(res.xui_sync);
+
+    if (res.xui_sync && !res.xui_sync.ok && !res.xui_sync.skipped) {
+      if (errEl) {
+        errEl.textContent = 'БД обновлена, но 3X-UI: ' + res.xui_sync.message;
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
+
+    setTimeout(() => {
+      closeModal();
+      if (_subEditUserId) viewUser(_subEditUserId);
+      else loadUsers();
+    }, 800);
   } catch (e) {
-    const el = document.getElementById('edit-sub-error');
-    el.textContent = e.message;
-    el.classList.remove('hidden');
+    if (errEl) { errEl.textContent = e.message; errEl.classList.remove('hidden'); }
   }
 }
 
