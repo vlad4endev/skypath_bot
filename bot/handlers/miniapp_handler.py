@@ -149,7 +149,7 @@ async def get_subscription(request: web.Request) -> web.Response:
 
 
 async def get_dashboard(request: web.Request) -> web.Response:
-    """Полный личный кабинет: пользователь, подписка, трафик, серверы."""
+    """Личный кабинет Mini App: пользователь и активная подписка."""
     telegram_id = int(request.match_info["telegram_id"])
     if telegram_id <= 0:
         return web.json_response({"error": "invalid telegram_id"}, status=400)
@@ -171,8 +171,6 @@ async def get_dashboard(request: web.Request) -> web.Response:
     is_new_vpn_user = _is_new_vpn_user(all_subs)
 
     traffic = None
-    servers = await xui.get_servers_status(config.XUI_INBOUND_IDS)
-
     plan_info = None
     subscription_data = None
 
@@ -199,7 +197,6 @@ async def get_dashboard(request: web.Request) -> web.Response:
         "is_new_user": is_new_user,
         "is_new_vpn_user": is_new_vpn_user,
         "subscription": subscription_data,
-        "servers": servers,
         "plans": _serialize_plans() if not has_subscription else None,
     })
 

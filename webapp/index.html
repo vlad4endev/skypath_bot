@@ -136,6 +136,90 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 14px; font-weight: 700;
       color: var(--accent);
+      overflow: hidden;
+      object-fit: cover;
+    }
+
+    /* Social profile */
+    .profile-screen {
+      text-align: center;
+      padding: 8px 0 20px;
+    }
+
+    .profile-photo {
+      width: 96px; height: 96px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid rgba(138, 156, 254, 0.35);
+      box-shadow: 0 8px 32px rgba(138, 156, 254, 0.18);
+      margin: 0 auto;
+      display: block;
+    }
+
+    .profile-photo.placeholder {
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(145deg, rgba(138,156,254,0.22), rgba(80,60,140,0.18));
+      font-size: 36px; font-weight: 800;
+      color: var(--accent);
+    }
+
+    .profile-name {
+      font-size: 22px; font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-top: 14px;
+    }
+
+    .profile-username {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .sub-card {
+      text-align: left;
+    }
+
+    .sub-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .sub-plan-name {
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .sub-meta {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .connect-btns {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .btn-connect {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-decoration: none;
+      margin-top: 0;
+    }
+
+    .btn-happ {
+      background: linear-gradient(135deg, #5a8cff, #7b6bff);
+    }
+
+    .btn-v2ray {
+      background: linear-gradient(135deg, #3d9a6a, #2d7a52);
     }
 
     /* Sections */
@@ -569,13 +653,13 @@
 <div class="overlay hidden" id="successOverlay" onclick="if(event.target===this)closeSuccessOverlay()">
   <div class="success-card" onclick="event.stopPropagation()">
     <div class="success-title">🎉 VPN готов!</div>
-    <p class="success-sub" id="successMessage">Скопируй ссылку подписки и добавь в Happ или v2rayNG.</p>
+    <p class="success-sub" id="successMessage">Нажми «Подключить» — подписка добавится в приложение.</p>
+    <div id="successConnectBtns"></div>
     <div class="key-block">
-      <div class="key-label">🔗 Ссылка подписки</div>
+      <div class="key-label">Ссылка подписки</div>
       <div class="key-value" id="successLink"></div>
-      <button class="copy-btn" onclick="copySuccessLink()">📋 Скопировать ссылку</button>
+      <button class="copy-btn" onclick="copySuccessLink()">📋 Скопировать</button>
     </div>
-    <button class="btn btn-primary" style="margin-top:14px" onclick="closeSuccessOverlay(); showTab('keys')">Перейти к ключам</button>
     <button class="btn btn-ghost" onclick="closeSuccessOverlay()">Закрыть</button>
   </div>
 </div>
@@ -609,6 +693,7 @@
   let supportUrl = 'https://t.me/SkyPathsupport';
   let selectedPlan = null;
   let selectedMonths = 1;
+  let lastSuccessLink = '';
 
   const ACTIVE_STATUSES = ['АКТИВНА', 'ПРОБНЫЙ ПЕРИОД'];
 
@@ -630,11 +715,107 @@
   function setAvatar() {
     const user = tg?.initDataUnsafe?.user;
     const el = document.getElementById('userAvatar');
-    if (user?.first_name) {
-      el.textContent = user.first_name[0].toUpperCase();
-    } else {
-      el.textContent = '?';
+    if (user?.photo_url) {
+      el.innerHTML = `<img src="${escapeHtml(user.photo_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+      return;
     }
+    const name = user?.first_name || '?';
+    el.textContent = name[0].toUpperCase();
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function getTelegramUser() {
+    return tg?.initDataUnsafe?.user || null;
+  }
+
+  function getDisplayName(dbUser) {
+    const tgUser = getTelegramUser();
+    const parts = [];
+    if (tgUser?.first_name) parts.push(tgUser.first_name);
+    if (tgUser?.last_name) parts.push(tgUser.last_name);
+    if (parts.length) return parts.join(' ');
+    if (dbUser?.full_name) return dbUser.full_name;
+    return 'Пользователь';
+  }
+
+  function getUsername(dbUser) {
+    const username = getTelegramUser()?.username || dbUser?.username;
+    if (!username) return '';
+    return `@${String(username).replace(/^@/, '')}`;
+  }
+
+  function renderProfileHeader(dbUser) {
+    const tgUser = getTelegramUser();
+    const name = getDisplayName(dbUser);
+    const username = getUsername(dbUser);
+    const initial = name[0]?.toUpperCase() || '?';
+    const photo = tgUser?.photo_url;
+
+    return `
+      <div class="profile-screen">
+        ${photo
+          ? `<img class="profile-photo" src="${escapeHtml(photo)}" alt="">`
+          : `<div class="profile-photo placeholder">${escapeHtml(initial)}</div>`}
+        <div class="profile-name">${escapeHtml(name)}</div>
+        ${username ? `<div class="profile-username">${escapeHtml(username)}</div>` : ''}
+      </div>`;
+  }
+
+  function buildHappLink(subscriptionUrl) {
+    return `happ://add/${encodeURIComponent(subscriptionUrl)}`;
+  }
+
+  function buildV2rayTunLink(subscriptionUrl) {
+    return `v2raytun://import/${encodeURIComponent(subscriptionUrl)}`;
+  }
+
+  function openAppLink(app) {
+    const link = getSubscriptionLink(dashboard?.subscription) || lastSuccessLink;
+    if (!link) {
+      showToast('❌ Сначала получите ссылку подписки', true);
+      return;
+    }
+    const deepLink = app === 'happ' ? buildHappLink(link) : buildV2rayTunLink(link);
+    tg?.HapticFeedback?.impactOccurred('medium');
+    if (tg?.openLink) tg.openLink(deepLink);
+    else window.location.href = deepLink;
+  }
+
+  function renderConnectButtons(link) {
+    if (!link) {
+      return `<button class="btn btn-primary" onclick="provisionVpn()">🔑 Получить ссылку подписки</button>`;
+    }
+    return `
+      <div class="connect-btns">
+        <button type="button" class="btn btn-primary btn-connect btn-happ" onclick="openAppLink('happ')">Подключить Happ</button>
+        <button type="button" class="btn btn-primary btn-connect btn-v2ray" onclick="openAppLink('v2ray')">Подключить v2RayTun</button>
+      </div>`;
+  }
+
+  function renderSubscriptionBlock(sub) {
+    if (!sub || !isActiveSub(sub)) return '';
+
+    const daysLeft = sub.days_left || 0;
+    return `
+      <div class="card card-glow sub-card">
+        <div class="sub-card-head">
+          <div class="sub-plan-name">${escapeHtml(sub.plan_name || sub.plan || 'Подписка')}</div>
+          <span class="status-badge ${statusBadgeClass(sub.status)}">
+            <span class="status-dot"></span>${escapeHtml(sub.status)}
+          </span>
+        </div>
+        <div class="sub-meta">
+          ${daysLeft > 0 ? `Осталось <b>${daysLeft} дн.</b> · ` : ''}
+          до ${formatDate(sub.expires_at)}
+        </div>
+      </div>`;
   }
 
   function dashboardQuery() {
@@ -767,165 +948,73 @@
   function renderCabinet() {
     const sub = dashboard?.subscription;
     const user = dashboard?.user;
-    const servers = dashboard?.servers || [];
+    const link = getSubscriptionLink(sub);
 
     if (!sub || !isActiveSub(sub)) {
       return renderNewUserLanding();
     }
 
-    const daysLeft = sub.days_left || 0;
-    const totalDays = sub.months_paid ? sub.months_paid * 30 : (sub.status === 'ПРОБНЫЙ ПЕРИОД' ? 3 : 30);
-    const pct = Math.max(0, Math.min(100, (daysLeft / totalDays) * 100));
-    const features = sub.plan_info?.features || [];
-
     return `
-      <div class="card card-glow">
-        <div class="status-row">
-          <div>
-            <div style="margin-bottom:8px"><span class="brand-pill">SKYFLOW VPN</span></div>
-            <div class="plan-title">${sub.plan_name || sub.plan}</div>
-          </div>
-          <span class="status-badge ${statusBadgeClass(sub.status)}">
-            <span class="status-dot"></span>${sub.status}
-          </span>
-        </div>
-
-        <div class="progress-wrap">
-          <div class="progress-label">
-            <span>Осталось <b>${daysLeft} дн.</b></span>
-            <span>до ${formatDate(sub.expires_at)}</span>
-          </div>
-          <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Трафик</div>
-        ${renderTrafficCard(sub.traffic, sub.traffic_gb)}
-      </div>
-
-      <div class="stats-grid" style="margin-bottom:12px">
-        <div class="stat-box">
-          <div class="stat-num" style="color:var(--accent)">${daysLeft}</div>
-          <div class="stat-label">дней</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num" style="color:var(--success)">${sub.limit_ip || 1}</div>
-          <div class="stat-label">устройств</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-num" style="color:var(--warning)">${sub.months_paid || '—'}</div>
-          <div class="stat-label">мес. оплачено</div>
-        </div>
-      </div>
-
-      ${features.length ? `
-      <div class="card">
-        <div class="card-title">Условия тарифа</div>
-        <ul class="feat-list">
-          ${features.map(f => `<li><span class="feat-check">✓</span>${f}</li>`).join('')}
-        </ul>
-      </div>` : ''}
-
-      ${servers.length ? `
-      <div class="card">
-        <div class="card-title">Серверы</div>
-        ${renderServers(servers)}
-      </div>` : ''}
-
-      ${getSubscriptionLink(sub) ? `
-      <div class="card">
-        <div class="card-title">Подключение в Happ</div>
-        <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:10px">
-          Скопируй ссылку подписки и вставь в Happ → «Добавить подписку».
-        </p>
-        <div class="key-value" style="margin-bottom:10px;word-break:break-all">${getSubscriptionLink(sub)}</div>
-        <button class="copy-btn" onclick="copySubscriptionLink()">📋 Скопировать ссылку</button>
-      </div>` : `
-      <button class="btn btn-primary" onclick="provisionVpn()">🔑 Получить ссылку подписки</button>`}
-
-      <button class="btn btn-primary" onclick="showTab('keys')">🔑 Мои ключи</button>
-      <button class="btn btn-ghost" onclick="showTab('plans')">🔄 Продлить / сменить тариф</button>
+      ${renderProfileHeader(user)}
+      ${renderSubscriptionBlock(sub)}
+      ${renderConnectButtons(link)}
+      <button class="btn btn-ghost" onclick="showTab('plans')">🔄 Продлить подписку</button>
     `;
   }
 
   function renderNewUserLanding() {
+    const user = dashboard?.user;
     return `
-      <div class="hero">
-        <div class="hero-badge"><span class="brand-pill">SKYFLOW VPN</span></div>
-        <div class="hero-radar">
-          ${RADAR_SVG}
-          <span class="logo-s">S</span>
+      ${renderProfileHeader(user)}
+      <div class="card">
+        <div class="sub-card-head">
+          <div class="sub-plan-name">Нет активной подписки</div>
+          <span class="status-badge expired"><span class="status-dot"></span>Не активна</span>
         </div>
-        <h1>Работает везде.<br><span class="accent">Всегда.</span></h1>
-        <p>Быстрый, надёжный VPN для всех устройств. YouTube в 4K, стриминг без буферизации.</p>
+        <p class="sub-meta">Выберите тариф — ключ и подключение появятся сразу после оплаты.</p>
       </div>
-
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:18px">
-        <span class="brand-pill green">🎁 3 дня бесплатно</span>
-        <span class="brand-pill">⚡ Быстрый</span>
-        <span class="brand-pill">🌍 Везде</span>
-      </div>
-
-      <div class="stats-grid" style="margin-bottom:16px">
-        <div class="stat-box"><div class="stat-num" style="color:var(--accent)">5</div><div class="stat-label">серверов</div></div>
-        <div class="stat-box"><div class="stat-num" style="color:var(--success)">10</div><div class="stat-label">устройств</div></div>
-        <div class="stat-box"><div class="stat-num" style="color:var(--warning)">4K</div><div class="stat-label">стриминг</div></div>
-      </div>
-
       <button class="btn btn-primary" onclick="showTab('plans')">Выбрать тариф</button>
     `;
   }
 
   function renderHome() {
-    document.getElementById('homeContent').innerHTML =
-      dashboard?.has_subscription ? renderCabinet() : renderNewUserLanding();
+    document.getElementById('homeContent').innerHTML = renderCabinet();
   }
 
   function renderKeys() {
     const el = document.getElementById('keysContent');
     const sub = dashboard?.subscription;
+    const user = dashboard?.user;
     const link = getSubscriptionLink(sub);
 
     if (!link) {
       if (dashboard?.has_subscription) {
         el.innerHTML = `
-          <div class="empty">
-            <div class="icon">🔑</div>
-            <p>Подписка активна, но ссылка ещё не создана. Нажми кнопку ниже — ключ появится через несколько секунд.</p>
+          ${renderProfileHeader(user)}
+          ${renderSubscriptionBlock(sub)}
+          <div class="empty" style="padding:24px 0">
+            <p>Ссылка ещё не создана. Нажми кнопку ниже.</p>
           </div>
           <button class="btn btn-primary" id="provisionBtn" onclick="provisionVpn()">🔑 Получить ссылку подписки</button>`;
         return;
       }
       el.innerHTML = `
-        <div class="empty">
-          <div class="icon">🔑</div>
-          <p>VPN ключи появятся здесь после оформления подписки</p>
+        ${renderProfileHeader(user)}
+        <div class="empty" style="padding:24px 0">
+          <p>Ключ появится после оформления подписки</p>
         </div>
         <button class="btn btn-primary" onclick="showTab('plans')">💎 Выбрать тариф</button>`;
       return;
     }
 
     el.innerHTML = `
-      <div class="card card-glow">
-        <div class="card-title">Ссылка подписки</div>
-        <div class="info-row"><span class="info-key">Тариф</span><span class="info-val">${sub.plan_name || sub.plan}</span></div>
-        <div class="info-row"><span class="info-key">Статус</span><span class="info-val">${sub.status}</span></div>
-        <div class="info-row"><span class="info-key">Действует до</span><span class="info-val">${formatDate(sub.expires_at)}</span></div>
-        <div class="info-row"><span class="info-key">Устройств</span><span class="info-val">${sub.limit_ip || 1}</span></div>
-        <div class="key-block">
-          <div class="key-label">🔗 Для Happ / v2rayNG</div>
-          <div class="key-value" id="vpnKey">${link}</div>
-          <button class="copy-btn" onclick="copyKey()">📋 Скопировать ссылку</button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-title">Быстрая настройка Happ</div>
-        <p style="font-size:13px;color:var(--muted);line-height:1.6">
-          1. Скопируй ссылку подписки<br>
-          2. Открой Happ → «+» → «Добавить подписку»<br>
-          3. Вставь ссылку и обнови список серверов
-        </p>
+      ${renderProfileHeader(user)}
+      ${renderSubscriptionBlock(sub)}
+      ${renderConnectButtons(link)}
+      <div class="key-block">
+        <div class="key-label">Ссылка подписки</div>
+        <div class="key-value" id="vpnKey">${escapeHtml(link)}</div>
+        <button class="copy-btn" onclick="copyKey()">📋 Скопировать</button>
       </div>`;
   }
 
@@ -1148,13 +1237,15 @@
     tg?.HapticFeedback?.selectionChanged();
   }
 
-  let lastSuccessLink = '';
-
   function showSubscriptionSuccess(url, message) {
     lastSuccessLink = url || '';
     document.getElementById('successLink').textContent = url || '';
     document.getElementById('successMessage').textContent =
-      message || 'Скопируй ссылку подписки и добавь в Happ или v2rayNG.';
+      message || 'Нажми «Подключить» — подписка добавится в приложение.';
+    const connectHost = document.getElementById('successConnectBtns');
+    if (connectHost) {
+      connectHost.innerHTML = url ? renderConnectButtons(url) : '';
+    }
     document.getElementById('successOverlay').classList.remove('hidden');
   }
 
