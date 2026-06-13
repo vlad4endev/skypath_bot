@@ -2,8 +2,8 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "010_user_preferred_locale"
-down_revision = "009_user_web_credentials"
+revision = "010"
+down_revision = "009"
 branch_labels = None
 depends_on = None
 
