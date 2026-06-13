@@ -97,9 +97,7 @@ async def set_locale(request: web.Request) -> web.Response:
 
     async with async_session() as session:
         user_repo = UserRepo(session)
-        user = await user_repo.get_by_telegram_id(telegram_id)
-        if not user:
-            return web.json_response({"error": "User not found"}, status=404)
+        user, _ = await user_repo.get_or_create(telegram_id=telegram_id)
         await user_repo.set_preferred_locale(user, locale)
 
     return web.json_response({

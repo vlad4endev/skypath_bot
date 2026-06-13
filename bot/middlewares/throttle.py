@@ -25,7 +25,12 @@ class ThrottlingMiddleware(BaseMiddleware):
 
         if user_id:
             if user_id in self.cache:
-                return  # Игнорируем слишком частые запросы
+                if isinstance(event, Update) and event.callback_query:
+                    try:
+                        await event.callback_query.answer()
+                    except Exception:
+                        pass
+                return
             self.cache[user_id] = True
 
         return await handler(event, data)

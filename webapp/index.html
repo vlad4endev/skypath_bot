@@ -789,16 +789,16 @@
   <section class="section" id="tab-plans">
     <div id="plansList"></div>
     <div id="planDetail" class="hidden">
-      <button class="btn-link" onclick="showPlansList()">← Назад к тарифам</button>
+      <button class="btn-link" data-i18n="back_to_plans" onclick="showPlansList()">← Назад к тарифам</button>
       <div class="card card-glow">
         <div id="planDetailContent"></div>
         <div class="months-grid" id="monthsGrid"></div>
         <div id="discountInfo" class="discount-info hidden"></div>
         <div class="promo-block" id="promoBlock">
-          <div class="card-title" style="font-size:13px;margin-bottom:0">Промокод</div>
+          <div class="card-title" style="font-size:13px;margin-bottom:0" data-i18n="promo_code">Промокод</div>
           <div class="promo-row">
             <input id="promoInput" type="text" placeholder="SKY10" maxlength="32" />
-            <button type="button" onclick="applyPromoCode()">Применить</button>
+            <button type="button" data-i18n="promo_apply" onclick="applyPromoCode()">Применить</button>
           </div>
           <div id="promoMessage" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
         </div>
@@ -810,41 +810,41 @@
   <!-- SUPPORT -->
   <section class="section" id="tab-support">
     <div class="card">
-      <div class="card-title">Поддержка</div>
-      <p style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:16px">
+      <div class="card-title" data-i18n="support_title">Поддержка</div>
+      <p style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:16px" data-i18n="support_message">
         Есть вопросы по настройке или оплате? Напиши нам — ответим быстро.
       </p>
-      <button class="btn btn-primary" id="supportBtn" onclick="openSupport()">💬 Написать в поддержку</button>
+      <button class="btn btn-primary" id="supportBtn" data-i18n-prefix="💬 " data-i18n-key="support_btn" onclick="openSupport()">💬 Написать в поддержку</button>
     </div>
     <div class="card">
-      <div class="card-title">Как подключиться</div>
+      <div class="card-title" data-i18n="how_to_connect">Как подключиться</div>
       <div class="info-row"><span class="info-key"><span class="brand-pill green" style="font-size:10px;padding:3px 10px">Android</span></span><span class="info-val" style="color:var(--accent)">v2rayNG</span></div>
       <div class="info-row"><span class="info-key">🍎 iPhone</span><span class="info-val" style="color:var(--accent)">Happ</span></div>
-      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-top:12px">
+      <p style="font-size:13px;color:var(--muted);line-height:1.6;margin-top:12px" data-i18n-html="connect_happ_hint">
         В Happ используй <b>ссылку подписки</b> из вкладки «Ключи» (не vless://). Вставь её в «Добавить подписку».
       </p>
       <div class="info-row"><span class="info-key">💻 Windows</span><span class="info-val" style="color:var(--accent)">Nekoray</span></div>
       <div class="info-row"><span class="info-key">🍎 macOS</span><span class="info-val" style="color:var(--accent)">V2Box</span></div>
     </div>
     <div class="card">
-      <div class="card-title">📋 Документы</div>
-      <p class="legal-note">
+      <div class="card-title" data-i18n="documents_title">📋 Документы</div>
+      <p class="legal-note" data-i18n="legal_note">
         Используя сервис, вы принимаете условия пользовательского соглашения и политики конфиденциальности.
       </p>
       <div class="legal-links">
         <button type="button" class="legal-link" onclick="openLegalLink(LEGAL_URLS.terms)">
           <span class="legal-link-icon">📄</span>
           <span class="legal-link-body">
-            <span class="legal-link-title">Пользовательское соглашение</span>
-            <span class="legal-link-desc">Условия использования сервиса</span>
+            <span class="legal-link-title" data-i18n="legal_terms">Пользовательское соглашение</span>
+            <span class="legal-link-desc" data-i18n="legal_terms_desc">Условия использования сервиса</span>
           </span>
           <span class="legal-link-arrow">›</span>
         </button>
         <button type="button" class="legal-link" onclick="openLegalLink(LEGAL_URLS.privacy)">
           <span class="legal-link-icon">🔒</span>
           <span class="legal-link-body">
-            <span class="legal-link-title">Политика конфиденциальности</span>
-            <span class="legal-link-desc">Как мы обрабатываем ваши данные</span>
+            <span class="legal-link-title" data-i18n="legal_privacy">Политика конфиденциальности</span>
+            <span class="legal-link-desc" data-i18n="legal_privacy_desc">Как мы обрабатываем ваши данные</span>
           </span>
           <span class="legal-link-arrow">›</span>
         </button>
@@ -870,23 +870,23 @@
 
 <div class="overlay hidden" id="successOverlay" onclick="if(event.target===this)closeSuccessOverlay()">
   <div class="success-card" onclick="event.stopPropagation()">
-    <div class="success-title">🎉 VPN готов!</div>
-    <p class="success-sub" id="successMessage">Нажми «Подключить» — подписка добавится в приложение.</p>
+    <div class="success-title" data-i18n="success_title">🎉 VPN готов!</div>
+    <p class="success-sub" id="successMessage" data-i18n="connect_hint">Нажми «Подключить» — подписка добавится в приложение.</p>
     <div id="successConnectBtns"></div>
     <div class="key-block">
-      <div class="key-label">Ссылка подписки</div>
+      <div class="key-label" data-i18n="subscription_link">Ссылка подписки</div>
       <div class="key-value" id="successLink"></div>
-      <button class="copy-btn" onclick="copySuccessLink()">📋 Скопировать</button>
+      <button class="copy-btn" data-i18n="copy_btn" onclick="copySuccessLink()">📋 Скопировать</button>
     </div>
-    <button class="btn btn-ghost" onclick="closeSuccessOverlay()">Закрыть</button>
+    <button class="btn btn-ghost" data-i18n="close" onclick="closeSuccessOverlay()">Закрыть</button>
   </div>
 </div>
 
 <div class="overlay hidden" id="paymentWaitOverlay">
   <div class="pay-wait-card">
     <div class="loader" style="padding:12px 0 20px"><div class="spinner"></div></div>
-    <div class="pay-wait-title">Проверяем оплату…</div>
-    <p class="pay-wait-sub">Обычно это занимает несколько секунд. Не закрывай приложение.</p>
+    <div class="pay-wait-title" data-i18n="payment_checking">Проверяем оплату…</div>
+    <p class="pay-wait-sub" data-i18n="payment_wait_sub">Обычно это занимает несколько секунд. Не закрывай приложение.</p>
   </div>
 </div>
 
@@ -917,6 +917,20 @@
 
   function tr(key, params) {
     return (window.I18n && I18n.t(key, params)) || key;
+  }
+
+  const STATUS_I18N = {
+    'АКТИВНА': 'status_active',
+    'ПРОБНЫЙ ПЕРИОД': 'status_trial',
+    'ИСТЕКЛА': 'status_expired',
+    'ЗАБЛОКИРОВАНА': 'status_blocked',
+    'ОЖИДАЕТ ОПЛАТУ': 'status_pending',
+  };
+
+  function trStatus(status) {
+    if (!status) return '';
+    const key = STATUS_I18N[status];
+    return key ? tr(key) : status;
   }
 
   let dashboard = null;
@@ -981,7 +995,7 @@
     if (tgUser?.last_name) parts.push(tgUser.last_name);
     if (parts.length) return parts.join(' ');
     if (dbUser?.full_name) return dbUser.full_name;
-    return 'Пользователь';
+    return tr('user');
   }
 
   function getUsername(dbUser) {
@@ -1025,7 +1039,7 @@
   function openAppLink(app) {
     const link = getSubscriptionLink(dashboard?.subscription) || lastSuccessLink;
     if (!link) {
-      showToast('❌ Сначала получите ссылку подписки', true);
+      showToast('❌ ' + tr('need_link_first'), true);
       return;
     }
     const deepLink = app === 'happ' ? buildHappLink(link) : buildV2rayTunLink(link);
@@ -1042,12 +1056,12 @@
 
   function renderConnectButtons(link) {
     if (!link) {
-      return `<button class="btn btn-primary" onclick="provisionVpn()">🔑 Получить ссылку подписки</button>`;
+      return `<button class="btn btn-primary" onclick="provisionVpn()">${tr('get_link')}</button>`;
     }
     return `
       <div class="connect-btns">
-        <button type="button" class="btn btn-primary btn-connect btn-happ" onclick="openAppLink('happ')">Подключить Happ</button>
-        <button type="button" class="btn btn-primary btn-connect btn-v2ray" onclick="openAppLink('v2ray')">Подключить v2RayTun</button>
+        <button type="button" class="btn btn-primary btn-connect btn-happ" onclick="openAppLink('happ')">${tr('connect_happ')}</button>
+        <button type="button" class="btn btn-primary btn-connect btn-v2ray" onclick="openAppLink('v2ray')">${tr('connect_v2ray')}</button>
       </div>`;
   }
 
@@ -1058,14 +1072,14 @@
     return `
       <div class="card card-glow sub-card">
         <div class="sub-card-head">
-          <div class="sub-plan-name">${escapeHtml(sub.plan_name || sub.plan || 'Подписка')}</div>
+          <div class="sub-plan-name">${escapeHtml(sub.plan_name || sub.plan || tr('subscription_default'))}</div>
           <span class="status-badge ${statusBadgeClass(sub.status)}">
-            <span class="status-dot"></span>${escapeHtml(sub.status)}
+            <span class="status-dot"></span>${escapeHtml(trStatus(sub.status))}
           </span>
         </div>
         <div class="sub-meta">
-          ${daysLeft > 0 ? `Осталось <b>${daysLeft} дн.</b> · ` : ''}
-          до ${formatDate(sub.expires_at)}
+          ${daysLeft > 0 ? `${tr('days_left', { days: daysLeft })} · ` : ''}
+          ${tr('expires', { date: formatDate(sub.expires_at) })}
         </div>
       </div>`;
   }
@@ -1136,8 +1150,8 @@
   }
 
   function formatGb(gb) {
-    if (gb >= 1) return `${gb.toFixed(1)} ГБ`;
-    return `${(gb * 1024).toFixed(0)} МБ`;
+    if (gb >= 1) return `${gb.toFixed(1)} ${tr('unit_gb')}`;
+    return `${(gb * 1024).toFixed(0)} ${tr('unit_mb')}`;
   }
 
   function trafficRing(pct) {
@@ -1207,7 +1221,7 @@
 
     const url = cabinetUrl || `${window.location.origin}/cabinet`;
     const host = (() => {
-      try { return new URL(url).host; } catch { return 'веб-версия'; }
+      try { return new URL(url).host; } catch { return tr('web_version'); }
     })();
 
     if (dashboard.web_registered) {
@@ -1218,7 +1232,7 @@
             <div class="web-access-icon">✓</div>
             <div class="web-access-copy">
               <div class="web-access-title">${tr('web_cabinet')}</div>
-              <div class="web-access-desc">${escapeHtml(email)} · вход с компьютера</div>
+              <div class="web-access-desc">${escapeHtml(email)} ${tr('web_pc_login')}</div>
             </div>
             <button type="button" class="web-access-link" onclick="openCabinet()">${tr('web_open')}</button>
           </div>
@@ -1318,7 +1332,7 @@
         <div class="empty" style="padding:24px 0">
           <p>${tr('key_after_sub')}</p>
         </div>
-        <button class="btn btn-primary" onclick="showTab('plans')">💎 Выбрать тариф</button>`;
+        <button class="btn btn-primary" onclick="showTab('plans')">💎 ${tr('choose_plan_btn')}</button>`;
       return;
     }
 
@@ -1327,9 +1341,9 @@
       ${renderSubscriptionBlock(sub)}
       ${renderConnectButtons(link)}
       <div class="key-block">
-        <div class="key-label">Ссылка подписки</div>
+        <div class="key-label">${tr('subscription_link')}</div>
         <div class="key-value" id="vpnKey">${escapeHtml(link)}</div>
-        <button class="copy-btn" onclick="copyKey()">📋 Скопировать</button>
+        <button class="copy-btn" onclick="copyKey()">${tr('copy_btn')}</button>
       </div>`;
   }
 
@@ -1339,24 +1353,20 @@
     let html = '';
 
     if (dashboard?.has_subscription) {
-      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">
-        Продли подписку или выбери новый тариф — ключ обновится автоматически.
-      </p>`;
+      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_renew_hint')}</p>`;
     } else if (dashboard?.is_new_vpn_user) {
-      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">
-        Начни с пробного тарифа — сразу получишь ссылку подписки для Happ.
-      </p>`;
+      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_trial_hint')}</p>`;
     }
 
     for (const [key, plan] of Object.entries(plans)) {
       const fromPrice = plan.prices ? Math.min(...Object.values(plan.prices)) : 0;
       html += `
         <div class="plan-card ${plan.recommended ? 'recommended' : ''}" onclick="showPlanDetail('${key}')">
-          ${plan.recommended ? '<span class="rec-badge">ТОП</span>' : ''}
+          ${plan.recommended ? `<span class="rec-badge">${tr('top_badge')}</span>` : ''}
           <div class="plan-name">${plan.name}</div>
           <div class="plan-desc">${plan.description || ''}</div>
           <div class="plan-price">
-            ${plan.prices ? `${fromPrice}<small> ₽/мес</small>` : '<small>Бесплатно</small>'}
+            ${plan.prices ? `${fromPrice}<small>${tr('per_month')}</small>` : `<small>${tr('free')}</small>`}
           </div>
           <div class="feat-tags">
             ${(plan.features || []).slice(0, 3).map(f => `<span class="feat-tag">${f}</span>`).join('')}
@@ -1399,7 +1409,7 @@
       grid.innerHTML = Object.entries(plan.prices).map(([m, p]) => {
         const base = plan.prices[1] * m;
         const save = base - p;
-        const label = monthsLabels[m] || `${m} мес.`;
+        const label = monthsLabels[m] || `${m}`;
         return `
           <div class="month-btn ${m == 1 ? 'selected' : ''}" id="month_${m}" onclick="selectMonth(${m}, ${p})">
             <div class="month-price" id="monthPrice_${m}">${p} ₽</div>
@@ -1482,18 +1492,18 @@
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
         msgEl.style.color = 'var(--danger)';
-        msgEl.textContent = data.error || 'Промокод недействителен';
+        msgEl.textContent = data.error || tr('promo_invalid');
         updateBuyBtn();
         return;
       }
       selectedPromoCode = code;
       msgEl.style.color = 'var(--success)';
-      msgEl.textContent = data.discount_label || `Скидка −${data.discount_total} ₽`;
+      msgEl.textContent = data.discount_label || tr('discount', { amount: data.discount_total });
       updateBuyBtn();
       tg?.HapticFeedback?.notificationOccurred('success');
     } catch (e) {
       msgEl.style.color = 'var(--danger)';
-      msgEl.textContent = 'Не удалось проверить промокод';
+      msgEl.textContent = tr('promo_check_fail');
     }
   }
 
@@ -1520,7 +1530,7 @@
     const info = document.getElementById('discountInfo');
     if (base > finalPrice) {
       info.classList.remove('hidden');
-      info.innerHTML = `<span class="old-price">${base} ₽</span> Итого: <strong>${finalPrice} ₽</strong>`;
+      info.innerHTML = `<span class="old-price">${base} ₽</span> ${tr('total')} <strong>${finalPrice} ₽</strong>`;
     } else {
       info.classList.add('hidden');
     }
@@ -1553,7 +1563,7 @@
         }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.message || data.error || 'Не удалось оформить заказ');
+      if (!r.ok) throw new Error(data.message || data.error || tr('order_failed'));
 
       if (data.provisioned && data.subscription_url) {
         await refresh();
@@ -1567,7 +1577,7 @@
         if (data.subscription_url) {
           showSubscriptionSuccess(data.subscription_url, data.message);
         } else {
-          showToast('✅ ' + (data.message || 'Пробный период активирован'));
+          showToast('✅ ' + (data.message || tr('trial_activated')));
           showTab('keys');
         }
         return;
@@ -1578,9 +1588,9 @@
         window.location.href = data.payment_url;
         return;
       }
-      throw new Error('Пустой ответ сервера');
+      throw new Error(tr('empty_response'));
     } catch (e) {
-      showToast('❌ ' + (e.message || 'Ошибка'), true);
+      showToast('❌ ' + (e.message || tr('error_generic')), true);
     } finally {
       btn.disabled = false;
     }
@@ -1625,9 +1635,9 @@
           }
           hidePaymentWaitOverlay();
           if (link) {
-            showSubscriptionSuccess(link, '✅ Оплата прошла успешно!');
+            showSubscriptionSuccess(link, tr('payment_success'));
           } else {
-            showToast('✅ Оплата подтверждена');
+            showToast(tr('payment_confirmed'));
             showTab('home');
           }
           tg?.HapticFeedback?.notificationOccurred('success');
@@ -1636,7 +1646,7 @@
         }
         if (r.ok && data.status === 'cancelled') {
           hidePaymentWaitOverlay();
-          showToast('❌ Оплата отменена', true);
+          showToast(tr('payment_cancelled'), true);
           showTab('plans');
           sessionStorage.removeItem('pending_order_id');
           return;
@@ -1644,10 +1654,10 @@
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
       hidePaymentWaitOverlay();
-      showToast('⏳ Оплата обрабатывается. Обнови кабинет через минуту.');
+      showToast(tr('payment_pending'));
     } catch (e) {
       hidePaymentWaitOverlay();
-      showToast('❌ ' + (e.message || 'Не удалось проверить оплату'), true);
+      showToast('❌ ' + (e.message || tr('error_generic')), true);
     }
   }
 
@@ -1658,7 +1668,7 @@
 
     if (fromUrl?.payment === 'failed') {
       sessionStorage.removeItem('pending_order_id');
-      showToast('❌ Оплата не завершена', true);
+      showToast(tr('payment_failed'), true);
       showTab('plans');
       return true;
     }
@@ -1710,15 +1720,15 @@
         }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.message || data.error || 'Не удалось создать ключ');
+      if (!r.ok) throw new Error(data.message || data.error || tr('provision_failed'));
       if (!silent) {
-        showToast('✅ ' + (data.message || 'Ссылка готова'));
+        showToast('✅ ' + (data.message || tr('link_ready')));
         await refresh();
         showTab('keys');
       }
       return data.subscription_url || data.vpn_key || null;
     } catch (e) {
-      if (!silent) showToast('❌ ' + (e.message || 'Ошибка'), true);
+      if (!silent) showToast('❌ ' + (e.message || tr('error_generic')), true);
       return null;
     } finally {
       if (btn) btn.disabled = false;
@@ -1830,7 +1840,7 @@
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        throw new Error(data.message || data.error || 'Не удалось сохранить');
+        throw new Error(data.message || data.error || tr('save_failed'));
       }
 
       dashboard.needs_registration = false;
@@ -1840,7 +1850,7 @@
       tg?.HapticFeedback?.notificationOccurred('success');
       await refresh();
     } catch (e) {
-      setWebAccessError(e.message || 'Ошибка сохранения');
+      setWebAccessError(e.message || tr('save_error'));
       tg?.HapticFeedback?.notificationOccurred('error');
     } finally {
       if (btn) btn.disabled = false;
@@ -1856,6 +1866,12 @@
 
   async function init() {
     setAvatar();
+    window.refresh = refresh;
+    window.showToast = showToast;
+    window.renderHome = renderHome;
+    window.renderKeys = renderKeys;
+    window.renderPlans = renderPlans;
+    window.updateBuyBtn = updateBuyBtn;
     await refresh();
 
     const paymentHandled = await handlePaymentReturn();

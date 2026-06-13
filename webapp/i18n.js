@@ -29,6 +29,29 @@
     return text;
   }
 
+  function applyStaticUi() {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-i18n');
+      if (!key) return;
+      const text = t(key);
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+        el.placeholder = text;
+      } else {
+        el.textContent = text;
+      }
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach((el) => {
+      const key = el.getAttribute('data-i18n-html');
+      if (key) el.innerHTML = t(key);
+    });
+    document.querySelectorAll('[data-i18n-prefix]').forEach((el) => {
+      const key = el.getAttribute('data-i18n-key');
+      if (!key) return;
+      const prefix = el.getAttribute('data-i18n-prefix') || '';
+      el.textContent = prefix + t(key);
+    });
+  }
+
   function applyBundle(bundle) {
     if (!bundle) return;
     locale = normalize(bundle.locale || locale);
@@ -36,8 +59,9 @@
     strings = { ...(bundle.app || {}), ...(bundle.lang || {}) };
     document.documentElement.lang = locale;
     document.documentElement.dir = rtl ? 'rtl' : 'ltr';
+    applyStaticUi();
     applyNav();
-    applySupportTab();
+    renderLanguageCard();
   }
 
   function applyNav() {
@@ -54,16 +78,6 @@
     });
   }
 
-  function applySupportTab() {
-    const supportTitle = document.querySelector('#tab-support .card-title');
-    if (supportTitle && !supportTitle.closest('#langCard')) {
-      supportTitle.textContent = t('support_title');
-    }
-    const supportBtn = document.getElementById('supportBtn');
-    if (supportBtn) supportBtn.textContent = '💬 ' + t('support_btn');
-    renderLanguageCard();
-  }
-
   function renderLanguageCard() {
     let card = document.getElementById('langCard');
     if (!card) {
@@ -76,7 +90,7 @@
     }
     card.innerHTML = `
       <div class="card-title">🌍 ${t('language')}</div>
-      <p style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:12px">${t('language')}</p>
+      <p style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:12px">${t('settings_desc') || t('language')}</p>
       <div class="lang-grid">
         ${SUPPORTED.map((code) => `
           <button type="button" class="lang-btn ${code === locale ? 'active' : ''}" data-locale="${code}" onclick="I18n.pick('${code}')">
@@ -85,10 +99,26 @@
       </div>`;
   }
 
+  async function rerenderApp() {
+    applyStaticUi();
+    applyNav();
+    renderLanguageCard();
+    if (typeof window.refresh === 'function') await window.refresh();
+    if (
+      !document.getElementById('planDetail')?.classList.contains('hidden')
+      && typeof window.updateBuyBtn === 'function'
+    ) {
+      window.updateBuyBtn();
+    }
+  }
+
   async function pick(code) {
     const next = normalize(code);
     if (next === locale) return;
-    const telegramId = window.telegramId || tg?.initDataUnsafe?.user?.id;
+
+    const telegramId = window.telegramId || window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    let saved = false;
+
     if (telegramId && Number(telegramId) > 0) {
       try {
         const r = await fetch('/api/locale', {
@@ -99,23 +129,29 @@
         const data = await r.json();
         if (r.ok && data.i18n) {
           applyBundle(data.i18n);
-          if (typeof window.refresh === 'function') await window.refresh();
-          if (typeof window.showToast === 'function') window.showToast('✅ ' + t('language'));
-          return;
+          saved = true;
         }
       } catch (e) {
         console.warn('locale save failed', e);
       }
     }
-    locale = next;
-    try {
-      const r = await fetch(`/api/i18n/${next}`);
-      const data = await r.json();
-      applyBundle(data);
-      if (typeof window.refresh === 'function') await window.refresh();
-    } catch (e) {
-      console.warn('locale load failed', e);
+
+    if (!saved) {
+      try {
+        const r = await fetch(`/api/i18n/${next}`);
+        const data = await r.json();
+        applyBundle(data);
+      } catch (e) {
+        console.warn('locale load failed', e);
+        return;
+      }
     }
+
+    await rerenderApp();
+    if (typeof window.showToast === 'function') {
+      window.showToast('✅ ' + LOCALE_LABELS[next]);
+    }
+    window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
   }
 
   window.I18n = {
