@@ -55,6 +55,13 @@ def get_user_locale(user: User | None, telegram_lang: str | None = None) -> str:
     return DEFAULT_LOCALE
 
 
+def get_api_locale(user: User | None) -> str:
+    """API messages: only explicit preferred_locale, otherwise Russian."""
+    if user and user.preferred_locale:
+        return normalize_locale(user.preferred_locale)
+    return DEFAULT_LOCALE
+
+
 @lru_cache(maxsize=8)
 def _load_locale(locale: str) -> dict[str, Any]:
     loc = normalize_locale(locale)

@@ -22,10 +22,20 @@ def validate_email(email: str) -> bool:
 
 def validate_password(password: str) -> str | None:
     if len(password) < MIN_PASSWORD_LEN:
-        return f"Пароль должен быть не короче {MIN_PASSWORD_LEN} символов"
+        return "password_too_short"
     if len(password) > 128:
-        return "Пароль слишком длинный"
+        return "password_too_long"
     return None
+
+
+def validate_password_message(error_key: str | None, locale: str) -> str | None:
+    if not error_key:
+        return None
+    from bot.i18n.api_messages import api_msg
+
+    if error_key == "password_too_short":
+        return api_msg(locale, error_key, min=MIN_PASSWORD_LEN)
+    return api_msg(locale, error_key)
 
 
 def hash_user_password(password: str, pepper: str) -> str:

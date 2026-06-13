@@ -5,6 +5,8 @@ import logging
 from typing import Any
 
 from bot.config import Config, PLANS
+from bot.i18n import get_api_locale
+from bot.i18n.api_messages import api_msg, localize_purchase_result
 from bot.services.payment_processor import create_paid_order
 from bot.services.subscription_url import resolve_subscription_url
 from bot.services.vpn_provision import ensure_subscription_link, provision_vpn_for_subscription
@@ -38,7 +40,8 @@ async def process_miniapp_purchase(
     """Создать заказ из Mini App. Возвращает dict для JSON-ответа."""
     plan_cfg = PLANS.get(plan)
     if not plan_cfg:
-        return {"error": "unknown_plan", "message": "Тариф не найден"}
+        locale = "ru"
+        return {"error": "unknown_plan", "message": api_msg(locale, "unknown_plan")}
 
     async with async_session() as session:
         user_repo = UserRepo(session)
@@ -51,9 +54,10 @@ async def process_miniapp_purchase(
         )
         existing_subs = await sub_repo.get_all_for_user(telegram_id)
         is_new_vpn_user = _is_new_vpn_user(existing_subs)
+        locale = get_api_locale(db_user)
 
     if plan == "FREE" or price == 0:
-        return await _issue_free_trial(
+        result = await _issue_free_trial(
             telegram_id=telegram_id,
             username=username,
             first_name=first_name,
@@ -61,7 +65,9 @@ async def process_miniapp_purchase(
             bot=bot,
             is_new_user=is_new_user,
             is_new_vpn_user=is_new_vpn_user,
+            locale=locale,
         )
+        return localize_purchase_result(result, locale)
 
     try:
         order = await create_paid_order(
@@ -76,10 +82,14 @@ async def process_miniapp_purchase(
             for_miniapp=True,
         )
     except ValueError as e:
-        return {"error": "invalid_discount", "message": str(e)}
+        err_key = str(e)
+        return {
+            "error": "invalid_discount",
+            "message": api_msg(locale, err_key) if err_key else api_msg(locale, "invalid_discount"),
+        }
     except Exception as e:
         logger.error("Mini App create order failed: %s", e)
-        return {"error": "payment_failed", "message": "Не удалось создать платёж"}
+        return {"error": "payment_failed", "message": api_msg(locale, "payment_failed")}
 
     return {
         "payment_url": order.payment_url,
@@ -106,6 +116,7 @@ async def _issue_free_trial(
     bot: Any | None = None,
     is_new_user: bool = False,
     is_new_vpn_user: bool = True,
+    locale: str = "ru",
 ) -> dict[str, Any]:
     async with async_session() as session:
         user_repo = UserRepo(session)
@@ -117,12 +128,13 @@ async def _issue_free_trial(
             first_name=first_name,
             last_name=last_name,
         )
+        locale = get_api_locale(db_user)
 
         existing = await sub_repo.get_all_for_user(telegram_id)
         if any(s.plan == PlanType.FREE for s in existing):
             return {
                 "error": "trial_used",
-                "message": "Пробный период уже был использован",
+                "message": api_msg(locale, "trial_used"),
             }
 
         active = await sub_repo.get_active(telegram_id)
@@ -137,7 +149,7 @@ async def _issue_free_trial(
                     "expires_at": active.expires_at.isoformat() if active.expires_at else None,
                     "is_new_user": is_new_user,
                     "is_new_vpn_user": False,
-                    "message": "Подписка уже активна",
+                    "message": api_msg(locale, "subscription_already_active"),
                 }
 
         sub = await sub_repo.create_pending(
@@ -159,10 +171,13 @@ async def _issue_free_trial(
         )
     except Exception as e:
         logger.exception("Free trial provision failed for %s: %s", telegram_id, e)
-        return {"error": "provision_failed", "message": "Не удалось создать VPN-ключ"}
+        return {
+            "error": "provision_failed",
+            "message": api_msg(locale, "provision_failed"),
+        }
 
     if bot is not None:
-        await _notify_trial_activated(bot, telegram_id, result.subscription_url)
+        await _notify_trial_activated(bot, telegram_id, result.subscription_url, locale)
 
     async with async_session() as session:
         sub_repo = SubscriptionRepo(session)
@@ -172,7 +187,10 @@ async def _issue_free_trial(
         SubscriptionStatus.ACTIVE,
         SubscriptionStatus.FREE_TRIAL,
     ):
-        return {"error": "provision_failed", "message": "Не удалось активировать подписку"}
+        return {
+            "error": "provision_failed",
+            "message": api_msg(locale, "provision_activate_failed"),
+        }
 
     return {
         "free_trial": True,
@@ -182,26 +200,34 @@ async def _issue_free_trial(
         "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
         "is_new_user": is_new_user,
         "is_new_vpn_user": is_new_vpn_user,
-        "message": "Пробный период активирован — ссылка готова",
+        "message": api_msg(locale, "trial_activated"),
     }
 
 
-async def _notify_trial_activated(bot: Any, telegram_id: int, subscription_url: str) -> None:
+async def _notify_trial_activated(
+    bot: Any,
+    telegram_id: int,
+    subscription_url: str,
+    locale: str,
+) -> None:
     try:
         from aiogram.utils.keyboard import InlineKeyboardBuilder
         from aiogram.types import InlineKeyboardButton
         from bot.keyboards.webapp import cabinet_button, is_miniapp_available
+        from bot.i18n import t
 
         text = (
-            "🎉 <b>Пробный VPN готов!</b>\n\n"
-            "🔗 <b>Ссылка подписки:</b>\n"
+            f"🎉 <b>{t(locale, 'api.trial_notify_title')}</b>\n\n"
+            f"🔗 <b>{t(locale, 'api.trial_notify_link')}</b>\n"
             f"<code>{subscription_url}</code>\n\n"
-            "Скопируй и добавь в Happ или v2rayNG."
+            f"{t(locale, 'api.trial_notify_hint')}"
         )
         builder = InlineKeyboardBuilder()
         if is_miniapp_available():
-            builder.row(cabinet_button("👤 Личный кабинет"))
-        builder.row(InlineKeyboardButton(text="📖 Инструкции", callback_data="instructions"))
+            builder.row(cabinet_button(t(locale, "menu.cabinet"), locale=locale))
+        builder.row(
+            InlineKeyboardButton(text=t(locale, "menu.instructions"), callback_data="instructions"),
+        )
         await bot.send_message(telegram_id, text, reply_markup=builder.as_markup())
     except Exception as e:
         logger.warning("Trial notify failed for %s: %s", telegram_id, e)

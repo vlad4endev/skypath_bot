@@ -1492,7 +1492,7 @@
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
         msgEl.style.color = 'var(--danger)';
-        msgEl.textContent = data.error || tr('promo_invalid');
+        msgEl.textContent = data.message || data.error || tr('promo_invalid');
         updateBuyBtn();
         return;
       }

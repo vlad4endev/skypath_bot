@@ -6,7 +6,8 @@ from aiohttp import web
 from aiogram import Router
 
 from bot.config import Config, PLANS, MONTHS_LABELS
-from bot.i18n import SUPPORTED_LOCALES, get_user_locale, normalize_locale, t
+from bot.i18n import SUPPORTED_LOCALES, get_api_locale, get_user_locale, normalize_locale, t
+from bot.i18n.api_messages import api_msg
 from bot.i18n.plans import i18n_bundle, months_labels, plan_display_name, serialize_plans
 from bot.services.discount_service import calculate_discount, preview_discounts_for_plan
 from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
@@ -17,6 +18,7 @@ from bot.services.user_auth import (
     normalize_email,
     validate_email,
     validate_password,
+    validate_password_message,
 )
 from bot.services.vpn_provision import ensure_subscription_link
 from bot.services.xui_client import XUIClient
@@ -254,6 +256,7 @@ async def get_dashboard(request: web.Request) -> web.Response:
 
 async def create_payment(request: web.Request) -> web.Response:
     """Создать платёж или пробный период из Mini App"""
+    telegram_id = 0
     try:
         data = await request.json()
         telegram_id = int(data.get("telegram_id", 0))
@@ -285,10 +288,26 @@ async def create_payment(request: web.Request) -> web.Response:
         return web.json_response(result)
 
     except ValueError as e:
-        return web.json_response({"error": "invalid_discount", "message": str(e)}, status=400)
+        async with async_session() as session:
+            user = await UserRepo(session).get_by_telegram_id(telegram_id)
+        locale = get_api_locale(user)
+        err_key = str(e)
+        return web.json_response(
+            {
+                "error": "invalid_discount",
+                "message": api_msg(locale, err_key),
+            },
+            status=400,
+        )
     except Exception as e:
         logger.error("Create payment error: %s", e)
-        return web.json_response({"error": str(e)}, status=500)
+        async with async_session() as session:
+            user = await UserRepo(session).get_by_telegram_id(telegram_id)
+        locale = get_api_locale(user)
+        return web.json_response(
+            {"error": "payment_failed", "message": api_msg(locale, "payment_failed")},
+            status=500,
+        )
 
 
 async def preview_discount(request: web.Request) -> web.Response:
@@ -302,12 +321,14 @@ async def preview_discount(request: web.Request) -> web.Response:
     async with async_session() as session:
         user_repo = UserRepo(session)
         db_user, is_new_user = await user_repo.get_or_create(telegram_id=telegram_id)
+        locale = get_api_locale(db_user)
         data = await preview_discounts_for_plan(
             session,
             telegram_id=telegram_id,
             user_id=db_user.id,
             plan_key=plan,
             is_new_user=is_new_user,
+            locale=locale,
         )
     return web.json_response(data)
 
@@ -334,6 +355,7 @@ async def validate_promo(request: web.Request) -> web.Response:
             first_name=data.get("first_name"),
             last_name=data.get("last_name"),
         )
+        locale = get_api_locale(db_user)
         discount = await calculate_discount(
             session,
             telegram_id=telegram_id,
@@ -342,11 +364,16 @@ async def validate_promo(request: web.Request) -> web.Response:
             months=months,
             promo_code=promo_code,
             is_new_user=is_new_user,
+            locale=locale,
         )
 
     if not discount.ok:
         return web.json_response(
-            {"valid": False, "error": discount.error or "Промокод недействителен"},
+            {
+                "valid": False,
+                "error": err_key,
+                "message": api_msg(locale, err_key),
+            },
             status=400,
         )
 
@@ -379,10 +406,14 @@ async def provision_vpn(request: web.Request) -> web.Response:
                 last_name=data.get("last_name") or None,
             )
             sub = await sub_repo.get_active(telegram_id)
+            locale = get_api_locale(user)
 
         if not sub or not _is_subscription_live(sub):
             return web.json_response(
-                {"error": "no_subscription", "message": "Нет активной подписки"},
+                {
+                    "error": "no_subscription",
+                    "message": api_msg(locale, "no_subscription"),
+                },
                 status=404,
             )
 
@@ -391,7 +422,7 @@ async def provision_vpn(request: web.Request) -> web.Response:
             return web.json_response({
                 "subscription_url": existing_url,
                 "vpn_key": existing_url,
-                "message": "Ссылка подписки готова",
+                "message": api_msg(locale, "link_ready"),
             })
 
         plan_key = sub.plan.value if sub.plan else "BASIC"
@@ -410,22 +441,32 @@ async def provision_vpn(request: web.Request) -> web.Response:
         )
         if not subscription_url:
             return web.json_response(
-                {"error": "provision_failed", "message": "Не удалось создать VPN-ключ"},
+                {
+                    "error": "provision_failed",
+                    "message": api_msg(locale, "provision_failed"),
+                },
                 status=500,
             )
 
         return web.json_response({
             "subscription_url": subscription_url,
             "vpn_key": subscription_url,
-            "message": "VPN-ключ создан",
+            "message": api_msg(locale, "vpn_key_created"),
         })
     except Exception as e:
         logger.error("Provision VPN error: %s", e)
-        return web.json_response({"error": "provision_failed", "message": str(e)}, status=500)
+        return web.json_response(
+            {
+                "error": "provision_failed",
+                "message": api_msg("ru", "provision_failed"),
+            },
+            status=500,
+        )
 
 
 async def register_web_account(request: web.Request) -> web.Response:
     """Первичная регистрация email + пароль для будущего входа в веб-версию."""
+    locale = "ru"
     try:
         data = await request.json()
         telegram_id = int(data.get("telegram_id", 0))
@@ -434,22 +475,31 @@ async def register_web_account(request: web.Request) -> web.Response:
         password_confirm = data.get("password_confirm") or password
 
         if telegram_id <= 0:
-            return web.json_response({"error": "telegram_id required"}, status=400)
+            return web.json_response(
+                {"error": "invalid_request", "message": api_msg(locale, "invalid_request")},
+                status=400,
+            )
         if not validate_email(email):
             return web.json_response(
-                {"error": "invalid_email", "message": "Введите корректный email"},
+                {"error": "invalid_email", "message": api_msg(locale, "invalid_email")},
                 status=400,
             )
 
         pwd_error = validate_password(password)
         if pwd_error:
             return web.json_response(
-                {"error": "weak_password", "message": pwd_error},
+                {
+                    "error": "weak_password",
+                    "message": validate_password_message(pwd_error, locale),
+                },
                 status=400,
             )
         if password != password_confirm:
             return web.json_response(
-                {"error": "password_mismatch", "message": "Пароли не совпадают"},
+                {
+                    "error": "password_mismatch",
+                    "message": api_msg(locale, "password_mismatch"),
+                },
                 status=400,
             )
 
@@ -461,17 +511,18 @@ async def register_web_account(request: web.Request) -> web.Response:
                 first_name=data.get("first_name") or None,
                 last_name=data.get("last_name") or None,
             )
+            locale = get_api_locale(user)
 
             if user.is_banned:
                 return web.json_response(
-                    {"error": "banned", "message": "Аккаунт заблокирован"},
+                    {"error": "banned", "message": api_msg(locale, "banned")},
                     status=403,
                 )
 
             existing_email = await user_repo.get_by_web_email(normalize_email(email))
             if existing_email and existing_email.id != user.id:
                 return web.json_response(
-                    {"error": "email_taken", "message": "Этот email уже используется"},
+                    {"error": "email_taken", "message": api_msg(locale, "email_taken")},
                     status=409,
                 )
 
@@ -479,7 +530,7 @@ async def register_web_account(request: web.Request) -> web.Response:
                 return web.json_response(
                     {
                         "error": "already_registered",
-                        "message": "Регистрация уже выполнена",
+                        "message": api_msg(locale, "already_registered"),
                         "web_email": user.web_email,
                     },
                     status=409,
@@ -495,23 +546,29 @@ async def register_web_account(request: web.Request) -> web.Response:
         return web.json_response({
             "ok": True,
             "web_email": user.web_email,
-            "message": "Регистрация завершена",
+            "message": api_msg(locale, "registration_complete"),
         })
     except ValueError as e:
         if str(e) == "email_taken":
             return web.json_response(
-                {"error": "email_taken", "message": "Этот email уже используется"},
+                {"error": "email_taken", "message": api_msg(locale, "email_taken")},
                 status=409,
             )
         if str(e) == "already_registered":
             return web.json_response(
-                {"error": "already_registered", "message": "Регистрация уже выполнена"},
+                {"error": "already_registered", "message": api_msg(locale, "already_registered")},
                 status=409,
             )
-        return web.json_response({"error": str(e)}, status=400)
+        return web.json_response(
+            {"error": str(e), "message": api_msg(locale, "generic_error")},
+            status=400,
+        )
     except Exception as e:
         logger.error("Register web account error: %s", e)
-        return web.json_response({"error": "registration_failed"}, status=500)
+        return web.json_response(
+            {"error": "registration_failed", "message": api_msg(locale, "registration_failed")},
+            status=500,
+        )
 
 
 async def get_payment_status(request: web.Request) -> web.Response:

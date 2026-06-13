@@ -59,7 +59,7 @@ async def create_paid_order(
     """Создать подписку (ожидает оплаты) и платёж в БД + Platega."""
     plan = PLANS.get(plan_key)
     if not plan:
-        raise ValueError(f"Unknown plan: {plan_key}")
+        raise ValueError("unknown_plan")
 
     async with async_session() as session:
         user_repo = UserRepo(session)
@@ -73,6 +73,9 @@ async def create_paid_order(
             last_name=last_name,
         )
 
+        from bot.i18n import get_api_locale
+
+        locale = get_api_locale(db_user)
         discount: DiscountResult = await calculate_discount(
             session,
             telegram_id=telegram_id,
@@ -81,6 +84,7 @@ async def create_paid_order(
             months=months,
             promo_code=promo_code,
             is_new_user=is_new_user,
+            locale=locale,
         )
         if not discount.ok:
             raise ValueError(discount.error or "invalid_discount")
@@ -108,7 +112,7 @@ async def create_paid_order(
 
         db_user = await user_repo.get_by_telegram_id(telegram_id)
         if not db_user:
-            raise ValueError("User not found")
+            raise ValueError("user_not_found")
 
         active = await sub_repo.get_active(telegram_id)
         if (

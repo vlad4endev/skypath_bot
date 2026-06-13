@@ -11,7 +11,8 @@ from aiohttp import web
 from bot.cabinet.auth import CabinetAuth
 from bot.config import Config, PLANS, MONTHS_LABELS
 from bot.handlers import miniapp_handler
-from bot.i18n import SUPPORTED_LOCALES, get_user_locale, normalize_locale, t
+from bot.i18n import SUPPORTED_LOCALES, get_api_locale, get_user_locale, normalize_locale, t
+from bot.i18n.api_messages import api_msg
 from bot.i18n.plans import i18n_bundle, months_labels
 from bot.services.discount_service import calculate_discount, preview_discounts_for_plan
 from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_user
@@ -45,6 +46,10 @@ def _error(message: str, status: int = 400, *, code: str | None = None) -> web.R
     return web.json_response(body, status=status)
 
 
+def _err(user: User | None, key: str, status: int = 400, **kwargs: Any) -> web.Response:
+    return _error(api_msg(get_api_locale(user), key, **kwargs), status, code=key)
+
+
 async def _body(request: web.Request) -> dict[str, Any]:
     try:
         return await request.json()
@@ -74,7 +79,7 @@ def cabinet_middleware(auth: CabinetAuth):
         token = auth.extract_token(request)
         session = await auth.get_session(token)
         if not session:
-            return _error("Требуется авторизация", 401, code="unauthorized")
+            return _err(None, "unauthorized", 401)
         request["cabinet_token"] = token
         request["cabinet_session"] = session
         return await handler(request)
@@ -87,9 +92,9 @@ def require_user(handler: Callable[..., Awaitable[web.Response]]):
     async def wrapper(request: web.Request) -> web.Response:
         user = await _get_authenticated_user(request)
         if not user:
-            return _error("Пользователь не найден", 401, code="unauthorized")
+            return _err(None, "user_not_found", 401)
         if user.is_banned:
-            return _error("Аккаунт заблокирован", 403, code="banned")
+            return _err(user, "banned", 403)
         request["cabinet_user"] = user
         return await handler(request)
 
@@ -106,9 +111,9 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
         password = body.get("password") or ""
 
         if not validate_email(email):
-            return _error("Введите корректный email", 400, code="invalid_email")
+            return _err(None, "invalid_email", 400)
         if not password:
-            return _error("Введите пароль", 400, code="missing_password")
+            return _err(None, "missing_password", 400)
 
         normalized = normalize_email(email)
         async with async_session() as session:
@@ -116,11 +121,11 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             user = await user_repo.get_by_web_email(normalized)
 
         if not user or not user.web_registered or not user.password_hash:
-            return _error("Неверный email или пароль", 401, code="invalid_credentials")
+            return _err(user, "invalid_credentials", 401)
         if user.is_banned:
-            return _error("Аккаунт заблокирован", 403, code="banned")
+            return _err(user, "banned", 403)
         if not verify_user_password(password, user.password_hash, config.WEB_PASSWORD_PEPPER):
-            return _error("Неверный email или пароль", 401, code="invalid_credentials")
+            return _err(user, "invalid_credentials", 401)
 
         token = await auth.create_session(
             user_id=user.id,
@@ -299,10 +304,10 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
 
             return web.json_response(result)
         except ValueError as e:
-            return _error(str(e), 400, code="invalid_discount")
+            return _err(user, str(e), 400)
         except Exception as e:
             logger.error("Cabinet payment error: %s", e)
-            return _error("Не удалось создать платёж", 500)
+            return _err(user, "payment_failed", 500)
 
     @require_user
     async def preview_discount(request: web.Request) -> web.Response:
@@ -310,8 +315,9 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
         try:
             plan = request.query.get("plan", "BASIC")
         except Exception:
-            return _error("Некорректный запрос", 400)
+            return _err(user, "invalid_request", 400)
 
+        locale = get_api_locale(user)
         async with async_session() as session:
             user_repo = UserRepo(session)
             db_user, is_new_user = await user_repo.get_or_create(telegram_id=user.telegram_id)
@@ -321,6 +327,7 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
                 user_id=db_user.id,
                 plan_key=plan,
                 is_new_user=is_new_user,
+                locale=locale,
             )
         return _json(data)
 
@@ -333,11 +340,12 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             months = int(data.get("months", 1))
             promo_code = (data.get("promo_code") or "").strip().upper()
         except (TypeError, ValueError):
-            return _error("Некорректный запрос", 400)
+            return _err(user, "invalid_request", 400)
 
         if not promo_code:
-            return _error("Введите промокод", 400)
+            return _err(user, "promo_required", 400)
 
+        locale = get_api_locale(user)
         async with async_session() as session:
             user_repo = UserRepo(session)
             db_user, is_new_user = await user_repo.get_or_create(telegram_id=user.telegram_id)
@@ -349,11 +357,17 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
                 months=months,
                 promo_code=promo_code,
                 is_new_user=is_new_user,
+                locale=locale,
             )
 
         if not discount.ok:
+            err_key = discount.error or "promo_invalid"
             return _json(
-                {"valid": False, "error": discount.error or "Промокод недействителен"},
+                {
+                    "valid": False,
+                    "error": err_key,
+                    "message": api_msg(locale, err_key),
+                },
                 status=400,
             )
 
@@ -370,20 +384,21 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
     @require_user
     async def provision_vpn(request: web.Request) -> web.Response:
         user: User = request["cabinet_user"]
+        locale = get_api_locale(user)
         try:
             async with async_session() as session:
                 sub_repo = SubscriptionRepo(session)
                 sub = await sub_repo.get_active(user.telegram_id)
 
             if not sub or not miniapp_handler._is_subscription_live(sub):
-                return _error("Нет активной подписки", 404, code="no_subscription")
+                return _err(user, "no_subscription", 404)
 
             existing_url = resolve_subscription_url(sub, config)
             if existing_url:
                 return _json({
                     "subscription_url": existing_url,
                     "vpn_key": existing_url,
-                    "message": "Ссылка подписки готова",
+                    "message": api_msg(locale, "link_ready"),
                 })
 
             plan_key = sub.plan.value if sub.plan else "BASIC"
@@ -401,23 +416,23 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
                 days=trial_days if is_trial else 0,
             )
             if not subscription_url:
-                return _error("Не удалось создать VPN-ключ", 500, code="provision_failed")
+                return _err(user, "provision_failed", 500)
 
             return _json({
                 "subscription_url": subscription_url,
                 "vpn_key": subscription_url,
-                "message": "VPN-ключ создан",
+                "message": api_msg(locale, "vpn_key_created"),
             })
         except Exception as e:
             logger.error("Cabinet provision error: %s", e)
-            return _error("Не удалось создать VPN-ключ", 500)
+            return _err(user, "provision_failed", 500)
 
     @require_user
     async def get_payment_status(request: web.Request) -> web.Response:
         user: User = request["cabinet_user"]
         order_id = request.match_info.get("order_id", "").strip()
         if not order_id:
-            return _error("Некорректный запрос", 400)
+            return _err(user, "invalid_request", 400)
 
         async with async_session() as session:
             pay_repo = PaymentRepo(session)
@@ -425,7 +440,7 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             payment = await pay_repo.get_by_order_id(order_id)
 
             if not payment or payment.telegram_id != user.telegram_id:
-                return _error("Заказ не найден", 404, code="not_found")
+                return _err(user, "order_not_found", 404)
 
             if payment.status == PaymentStatus.PENDING:
                 bot = request.app.get("bot")

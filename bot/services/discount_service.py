@@ -99,9 +99,14 @@ async def calculate_discount(
     months: int,
     promo_code: str | None = None,
     is_new_user: bool = False,
+    locale: str | None = None,
 ) -> DiscountResult:
     """Рассчитать итоговую цену с учётом акций и промокода."""
+    from bot.i18n.api_messages import api_msg
     from database.repository import PromotionRepo, PromoRepo
+
+    def _label(key: str, **kwargs: str) -> str:
+        return api_msg(locale or "ru", key, **kwargs)
 
     plan = PLANS.get(plan_key)
     if not plan or plan_key == "FREE":
@@ -145,15 +150,15 @@ async def calculate_discount(
     if promo_code:
         promo_obj = await promo_repo.get_by_code(promo_code.strip())
         if not promo_obj:
-            promo_error = "Промокод не найден"
+            promo_error = "promo_not_found"
         elif not _promo_code_matches(
             promo_obj, plan_key=plan_key, months=months, base_price=base_price
         ):
-            promo_error = "Промокод не подходит к этому тарифу или сроку"
+            promo_error = "promo_plan_mismatch"
         elif promo_obj.one_per_user and await promo_repo.user_has_used(promo_obj.id, user_id):
-            promo_error = "Вы уже использовали этот промокод"
+            promo_error = "promo_already_used"
         elif promo_obj.assigned_telegram_id and promo_obj.assigned_telegram_id != telegram_id:
-            promo_error = "Промокод предназначен для другого пользователя"
+            promo_error = "promo_assigned_other"
         else:
             promo_price = _apply_discount(
                 base_price, promo_obj.discount_pct, promo_obj.discount_amount
@@ -188,26 +193,26 @@ async def calculate_discount(
             final_price = stacked
             applied_promotion = best_promotion
             applied_promo = promo_obj
-            label_parts.append(f"Акция «{best_promotion.name}»")
-            label_parts.append(f"Промокод {promo_obj.code}")
+            label_parts.append(_label("promotion_label", name=best_promotion.name))
+            label_parts.append(_label("promo_code_label", code=promo_obj.code))
         else:
             promo_savings = base_price - promo_price
             if promo_savings >= best_promo_savings:
                 final_price = promo_price
                 applied_promo = promo_obj
-                label_parts.append(f"Промокод {promo_obj.code}")
+                label_parts.append(_label("promo_code_label", code=promo_obj.code))
             else:
                 final_price = promotion_price
                 applied_promotion = best_promotion
-                label_parts.append(f"Акция «{best_promotion.name}»")
+                label_parts.append(_label("promotion_label", name=best_promotion.name))
     elif promo_obj:
         final_price = promo_price
         applied_promo = promo_obj
-        label_parts.append(f"Промокод {promo_obj.code}")
+        label_parts.append(_label("promo_code_label", code=promo_obj.code))
     elif best_promotion:
         final_price = promotion_price
         applied_promotion = best_promotion
-        label_parts.append(f"Акция «{best_promotion.name}»")
+        label_parts.append(_label("promotion_label", name=best_promotion.name))
 
     discount_total = base_price - final_price
     discount_label = None
@@ -233,6 +238,7 @@ async def preview_discounts_for_plan(
     user_id: int,
     plan_key: str,
     is_new_user: bool = False,
+    locale: str | None = None,
 ) -> dict:
     """Предпросмотр цен по всем срокам тарифа (для Mini App)."""
     plan = PLANS.get(plan_key)
@@ -248,6 +254,7 @@ async def preview_discounts_for_plan(
             plan_key=plan_key,
             months=int(months),
             is_new_user=is_new_user,
+            locale=locale,
         )
         months_prices[str(months)] = {
             "base_price": result.base_price,
