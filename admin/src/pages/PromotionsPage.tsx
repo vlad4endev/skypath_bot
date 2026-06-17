@@ -11,7 +11,7 @@ interface PromotionsPageProps {
 }
 
 const PLAN_OPTIONS = ['BASIC', 'MULTI', 'SUPER'];
-const MONTH_OPTIONS = ['1', '3', '6', '12'];
+const MONTH_OPTIONS = ['1', '2', '3', '6', '12'];
 
 function formatRestrictions(plans: string[] | null, months: string[] | null) {
   const parts: string[] = [];

@@ -221,6 +221,7 @@
     "promo_not_found": "प्रोमो कोड नहीं मिला",
     "promo_plan_mismatch": "प्रोमो कोड इस प्लान/अवधि पर लागू नहीं",
     "promo_already_used": "आप यह प्रोमो कोड पहले उपयोग कर चुके हैं",
+    "promo_expired": "प्रोमो कोड की वैधता समाप्त हो गई है",
     "promo_assigned_other": "प्रोमो कोड दूसरे उपयोगकर्ता के लिए",
     "promotion_label": "प्रचार «{name}»",
     "promo_code_label": "प्रोमो कोड {code}",

@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { Modal } from '../components/ui';
 
 const PLAN_OPTIONS = ['BASIC', 'MULTI', 'SUPER'];
-const MONTH_OPTIONS = ['1', '3', '6', '12'];
+const MONTH_OPTIONS = ['1', '2', '3', '6', '12'];
 
 export interface AssignDiscountPrefill {
   discount_pct?: number | null;

@@ -11,7 +11,7 @@ interface PromosPageProps {
 }
 
 const PLAN_OPTIONS = ['BASIC', 'MULTI', 'SUPER'];
-const MONTH_OPTIONS = ['1', '3', '6', '12'];
+const MONTH_OPTIONS = ['1', '2', '3', '6', '12'];
 
 export function PromosPage({ onToast }: PromosPageProps) {
   const [items, setItems] = useState<PromoRow[]>([]);

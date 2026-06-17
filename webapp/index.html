@@ -1497,8 +1497,18 @@
         return;
       }
       selectedPromoCode = code;
+      if (data.final_price != null) {
+        const monthKey = String(selectedMonths);
+        discountPreview[monthKey] = {
+          ...(discountPreview[monthKey] || {}),
+          base_price: data.base_price,
+          final_price: data.final_price,
+          discount_total: data.discount_total,
+        };
+      }
       msgEl.style.color = 'var(--success)';
       msgEl.textContent = data.discount_label || tr('discount', { amount: data.discount_total });
+      updateMonthPrices();
       updateBuyBtn();
       tg?.HapticFeedback?.notificationOccurred('success');
     } catch (e) {

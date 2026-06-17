@@ -221,6 +221,7 @@
     "promo_not_found": "Promo code not found",
     "promo_plan_mismatch": "Promo code doesn't apply to this plan or term",
     "promo_already_used": "You have already used this promo code",
+    "promo_expired": "This promo code has expired",
     "promo_assigned_other": "Promo code is assigned to another user",
     "promotion_label": "Promotion «{name}»",
     "promo_code_label": "Promo code {code}",

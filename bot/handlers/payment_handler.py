@@ -106,6 +106,8 @@ async def cb_confirm_plan(call: CallbackQuery):
         await call.answer("Не удалось создать платёж", show_alert=True)
         return
 
+    price = int(order.amount)
+
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text=f"💳 Оплатить {price} руб.", url=order.payment_url),

@@ -221,6 +221,7 @@
     "promo_not_found": "الرمز غير موجود",
     "promo_plan_mismatch": "الرمز لا ينطبق على هذه الخطة أو المدة",
     "promo_already_used": "استخدمت هذا الرمز مسبقًا",
+    "promo_expired": "انتهت صلاحية الرمز الترويجي",
     "promo_assigned_other": "الرمز مخصص لمستخدم آخر",
     "promotion_label": "عرض «{name}»",
     "promo_code_label": "رمز {code}",

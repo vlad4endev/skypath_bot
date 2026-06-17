@@ -221,6 +221,7 @@
     "promo_not_found": "Промокод не найден",
     "promo_plan_mismatch": "Промокод не подходит к этому тарифу или сроку",
     "promo_already_used": "Вы уже использовали этот промокод",
+    "promo_expired": "Срок действия промокода истёк",
     "promo_assigned_other": "Промокод предназначен для другого пользователя",
     "promotion_label": "Акция «{name}»",
     "promo_code_label": "Промокод {code}",

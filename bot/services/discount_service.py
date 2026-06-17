@@ -62,22 +62,35 @@ def _promotion_matches(promo: Promotion, *, plan_key: str, months: int, base_pri
     return True
 
 
-def _promo_code_matches(
+def _is_personal_promo(promo: PromoCode, telegram_id: int) -> bool:
+    if promo.assigned_telegram_id is None:
+        return False
+    return int(promo.assigned_telegram_id) == int(telegram_id)
+
+
+def _promo_code_error(
     promo: PromoCode,
     *,
     plan_key: str,
     months: int,
     base_price: int,
-) -> bool:
-    if not promo.is_valid:
-        return False
+) -> str | None:
+    """Код ошибки или None, если промокод подходит к заказу."""
+    from datetime import datetime
+
+    if not promo.is_active:
+        return "promo_invalid"
+    if promo.max_uses and promo.uses_count >= promo.max_uses:
+        return "promo_already_used"
+    if promo.expires_at and promo.expires_at < datetime.utcnow():
+        return "promo_expired"
     if not _matches_list(promo.plans, plan_key):
-        return False
+        return "promo_plan_mismatch"
     if not _matches_list(promo.months, months):
-        return False
+        return "promo_plan_mismatch"
     if promo.min_amount and base_price < promo.min_amount:
-        return False
-    return True
+        return "promo_plan_mismatch"
+    return None
 
 
 def _format_discount(pct: int, amount: int) -> str:
@@ -151,13 +164,15 @@ async def calculate_discount(
         promo_obj = await promo_repo.get_by_code(promo_code.strip())
         if not promo_obj:
             promo_error = "promo_not_found"
-        elif not _promo_code_matches(
+        elif promo_err := _promo_code_error(
             promo_obj, plan_key=plan_key, months=months, base_price=base_price
         ):
-            promo_error = "promo_plan_mismatch"
+            promo_error = promo_err
         elif promo_obj.one_per_user and await promo_repo.user_has_used(promo_obj.id, user_id):
             promo_error = "promo_already_used"
-        elif promo_obj.assigned_telegram_id and promo_obj.assigned_telegram_id != telegram_id:
+        elif promo_obj.assigned_telegram_id is not None and not _is_personal_promo(
+            promo_obj, telegram_id
+        ):
             promo_error = "promo_assigned_other"
         else:
             promo_price = _apply_discount(
@@ -194,6 +209,11 @@ async def calculate_discount(
             applied_promotion = best_promotion
             applied_promo = promo_obj
             label_parts.append(_label("promotion_label", name=best_promotion.name))
+            label_parts.append(_label("promo_code_label", code=promo_obj.code))
+        elif _is_personal_promo(promo_obj, telegram_id):
+            # Персональный промокод всегда применяется, если пользователь его ввёл.
+            final_price = promo_price
+            applied_promo = promo_obj
             label_parts.append(_label("promo_code_label", code=promo_obj.code))
         else:
             promo_savings = base_price - promo_price

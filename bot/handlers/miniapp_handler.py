@@ -368,6 +368,7 @@ async def validate_promo(request: web.Request) -> web.Response:
         )
 
     if not discount.ok:
+        err_key = discount.error or "promo_invalid"
         return web.json_response(
             {
                 "valid": False,
