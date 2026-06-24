@@ -177,6 +177,7 @@
     "connect_v2ray": "Connect v2RayTun",
     "need_link_first": "Get a subscription link first",
     "plans_renew_hint": "Renew or pick a new plan — your key updates automatically.",
+    "plans_locked_hint": "Renewal opens 14 days before expiry. You have {days} days left on your subscription.",
     "plans_trial_hint": "Start with the trial plan — get a Happ subscription link right away.",
     "top_badge": "TOP",
     "free": "Free",

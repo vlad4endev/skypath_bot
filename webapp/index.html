@@ -919,6 +919,16 @@
     return (window.I18n && I18n.t(key, params)) || key;
   }
 
+  function resolveCanRenew(dash) {
+    if (!dash) return true;
+    if (typeof dash.can_renew === 'boolean') return dash.can_renew;
+    if (!dash.has_subscription) return true;
+    const sub = dash.subscription;
+    if (!sub) return true;
+    if (sub.is_active === false) return true;
+    return (sub.days_left ?? 999) <= 14;
+  }
+
   const STATUS_I18N = {
     'АКТИВНА': 'status_active',
     'ПРОБНЫЙ ПЕРИОД': 'status_trial',
@@ -1104,7 +1114,7 @@
         supportUrl = dashboard.support_url || supportUrl;
         cabinetUrl = dashboard.cabinet_url || cabinetUrl;
         if (dashboard.plans) plansData = dashboard.plans;
-        else if (dashboard.can_renew) {
+        else if (resolveCanRenew(dashboard)) {
           const plansR = await fetch(`${API}/plans`).catch(() => null);
           if (plansR?.ok) {
             const p = await plansR.json();
@@ -1285,7 +1295,7 @@
     const sub = dashboard?.subscription;
     const user = dashboard?.user;
     const link = getSubscriptionLink(sub);
-    const canRenew = dashboard?.can_renew || !dashboard?.has_subscription;
+    const canRenew = resolveCanRenew(dashboard);
 
     if (!sub) {
       return renderNewUserLanding();
@@ -1377,12 +1387,13 @@
     const plans = Object.keys(plansData).length ? plansData : (dashboard?.plans || {});
     const el = document.getElementById('plansList');
     let html = '';
-    const canRenew = dashboard?.can_renew || !dashboard?.has_subscription;
+    const canRenew = resolveCanRenew(dashboard);
 
     if (dashboard?.has_subscription && canRenew) {
       html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_renew_hint')}</p>`;
     } else if (dashboard?.has_subscription && !canRenew) {
-      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_locked_hint') || 'Тарифы доступны для продления за 14 дней до окончания подписки.'}</p>`;
+      const daysLeft = dashboard.subscription?.days_left ?? 0;
+      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_locked_hint', { days: daysLeft })}</p>`;
       el.innerHTML = html;
       return;
     } else if (dashboard?.is_new_vpn_user) {
