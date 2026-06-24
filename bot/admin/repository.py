@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select, delete
+from sqlalchemy import and_, func, or_, select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,6 +15,7 @@ from database.models import (
     PaymentStatus,
     PlanType,
     PromoCode,
+    PromoCodeUsage,
     Promotion,
     Subscription,
     SubscriptionStatus,
@@ -508,6 +509,9 @@ class AdminRepo:
         if not user:
             return False
         await self.session.execute(
+            delete(PromoCodeUsage).where(PromoCodeUsage.user_id == user_id)
+        )
+        await self.session.execute(
             delete(Payment).where(Payment.user_id == user_id)
         )
         await self.session.execute(
@@ -897,6 +901,11 @@ class AdminRepo:
         payment = await self.get_payment(payment_id)
         if not payment:
             return False
+        await self.session.execute(
+            update(PromoCodeUsage)
+            .where(PromoCodeUsage.payment_id == payment_id)
+            .values(payment_id=None)
+        )
         await self.session.delete(payment)
         await self.session.commit()
         return True
