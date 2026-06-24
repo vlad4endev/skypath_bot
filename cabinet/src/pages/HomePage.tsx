@@ -53,6 +53,7 @@ export function HomePage() {
 
   const sub = data.subscription;
   const user = data.user;
+  const canRenew = data.can_renew ?? !data.has_subscription;
   const traffic = sub?.traffic;
   const usedBytes = (traffic?.up ?? 0) + (traffic?.down ?? 0);
   const limitBytes = sub?.traffic_gb ? sub.traffic_gb * 1024 ** 3 : traffic?.limit ?? 0;
@@ -85,7 +86,7 @@ export function HomePage() {
         </div>
       </div>
 
-      {sub && data.has_subscription ? (
+      {sub ? (
         <section className="card subscription-card">
           <div className="card-head">
             <div>
@@ -122,12 +123,14 @@ export function HomePage() {
           </div>
 
           <div className="card-actions">
-            <Link to="/keys" className="btn btn--primary">
-              Подключить VPN
-            </Link>
-            {sub.days_left <= 7 && (
+            {sub.is_active && (
+              <Link to="/keys" className="btn btn--primary">
+                Подключить VPN
+              </Link>
+            )}
+            {canRenew && (
               <Link to="/plans" className="btn btn--secondary">
-                Продлить
+                {sub.is_active ? 'Продлить' : 'Возобновить подписку'}
               </Link>
             )}
           </div>

@@ -54,6 +54,7 @@ export interface DashboardData {
   i18n?: I18nApiBundle;
   user: DashboardUser | null;
   has_subscription: boolean;
+  can_renew?: boolean;
   is_new_vpn_user: boolean;
   web_registered: boolean;
   subscription: SubscriptionInfo | null;

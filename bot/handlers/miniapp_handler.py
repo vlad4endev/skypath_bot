@@ -41,6 +41,7 @@ xui = XUIClient(
 )
 
 ACTIVE_STATUSES = {SubscriptionStatus.ACTIVE, SubscriptionStatus.FREE_TRIAL}
+RENEWAL_WINDOW_DAYS = 14
 
 
 def _resolve_request_locale(request: web.Request, user=None) -> str:
@@ -64,6 +65,23 @@ def _plan_display_name(plan: PlanType | None, locale: str = "ru") -> str:
 
 def _is_subscription_live(sub) -> bool:
     return sub is not None and sub.is_active
+
+
+def _subscription_can_renew(sub) -> bool:
+    """Тарифы для продления: подписка истекла, пробная или осталось ≤14 дней."""
+    if sub is None:
+        return False
+    if not _is_subscription_live(sub):
+        return True
+    if sub.plan == PlanType.FREE or sub.status == SubscriptionStatus.FREE_TRIAL:
+        return True
+    return sub.days_left <= RENEWAL_WINDOW_DAYS
+
+
+def _plans_available_for_user(sub, *, has_subscription: bool) -> bool:
+    if not has_subscription:
+        return True
+    return _subscription_can_renew(sub)
 
 
 async def get_config(request: web.Request) -> web.Response:
@@ -208,9 +226,13 @@ async def get_dashboard(request: web.Request) -> web.Response:
         )
         all_subs = await sub_repo.get_all_for_user(telegram_id)
         sub = await sub_repo.get_active(telegram_id)
+        if not sub:
+            sub = await sub_repo.get_expired_grace_restorable(telegram_id)
         referrals = await user_repo.count_referrals(telegram_id)
 
     has_subscription = sub is not None and _is_subscription_live(sub)
+    can_renew = _subscription_can_renew(sub)
+    show_plans = _plans_available_for_user(sub, has_subscription=has_subscription)
     is_new_vpn_user = _is_new_vpn_user(all_subs)
 
     locale = _resolve_request_locale(request, user)
@@ -245,12 +267,13 @@ async def get_dashboard(request: web.Request) -> web.Response:
             "web_email": user.web_email if user and user.web_registered else None,
         } if user else None,
         "has_subscription": has_subscription,
+        "can_renew": can_renew,
         "is_new_user": is_new_user,
         "is_new_vpn_user": is_new_vpn_user,
         "needs_registration": bool(user and not user.web_registered),
         "web_registered": bool(user and user.web_registered),
         "subscription": subscription_data,
-        "plans": _serialize_plans(locale) if not has_subscription else None,
+        "plans": _serialize_plans(locale) if show_plans else None,
     })
 
 

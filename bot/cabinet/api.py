@@ -211,9 +211,15 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             sub_repo = SubscriptionRepo(session)
             all_subs = await sub_repo.get_all_for_user(telegram_id)
             sub = await sub_repo.get_active(telegram_id)
+            if not sub:
+                sub = await sub_repo.get_expired_grace_restorable(telegram_id)
             referrals = await user_repo.count_referrals(telegram_id)
 
         has_subscription = sub is not None and miniapp_handler._is_subscription_live(sub)
+        can_renew = miniapp_handler._subscription_can_renew(sub)
+        show_plans = miniapp_handler._plans_available_for_user(
+            sub, has_subscription=has_subscription,
+        )
         is_new_vpn_user = _is_new_vpn_user(all_subs)
 
         locale = get_user_locale(user)
@@ -247,10 +253,11 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
                 "referrals_count": referrals,
             },
             "has_subscription": has_subscription,
+            "can_renew": can_renew,
             "is_new_vpn_user": is_new_vpn_user,
             "web_registered": user.web_registered,
             "subscription": subscription_data,
-            "plans": miniapp_handler._serialize_plans(locale) if not has_subscription else None,
+            "plans": miniapp_handler._serialize_plans(locale) if show_plans else None,
         })
 
     @require_user

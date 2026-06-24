@@ -1104,6 +1104,13 @@
         supportUrl = dashboard.support_url || supportUrl;
         cabinetUrl = dashboard.cabinet_url || cabinetUrl;
         if (dashboard.plans) plansData = dashboard.plans;
+        else if (dashboard.can_renew) {
+          const plansR = await fetch(`${API}/plans`).catch(() => null);
+          if (plansR?.ok) {
+            const p = await plansR.json();
+            plansData = p.plans || {};
+          }
+        }
         if (dashboard.i18n) I18n.applyBundle(dashboard.i18n);
         return;
       }
@@ -1130,7 +1137,9 @@
   }
 
   function isActiveSub(sub) {
-    return sub && ACTIVE_STATUSES.includes(sub.status);
+    if (!sub) return false;
+    if (typeof sub.is_active === 'boolean') return sub.is_active;
+    return ACTIVE_STATUSES.includes(sub.status);
   }
 
   function getSubscriptionLink(sub) {
@@ -1276,9 +1285,26 @@
     const sub = dashboard?.subscription;
     const user = dashboard?.user;
     const link = getSubscriptionLink(sub);
+    const canRenew = dashboard?.can_renew || !dashboard?.has_subscription;
 
-    if (!sub || !isActiveSub(sub)) {
+    if (!sub) {
       return renderNewUserLanding();
+    }
+
+    if (!isActiveSub(sub)) {
+      return `
+        ${renderProfileHeader(user)}
+        ${renderWebAccessCard()}
+        <div class="card">
+          <div class="sub-card-head">
+            <div class="sub-plan-name">${escapeHtml(sub.plan_name || sub.plan || tr('subscription_default'))}</div>
+            <span class="status-badge expired"><span class="status-dot"></span>${escapeHtml(tr('inactive'))}</span>
+          </div>
+          <p class="sub-meta">${tr('expires', { date: formatDate(sub.expires_at) })}</p>
+          <p class="sub-meta">${tr('choose_plan_hint')}</p>
+        </div>
+        ${canRenew ? `<button class="btn btn-primary" onclick="showTab('plans')">${tr('renew_sub')}</button>` : ''}
+      `;
     }
 
     return `
@@ -1286,7 +1312,7 @@
       ${renderWebAccessCard()}
       ${renderSubscriptionBlock(sub)}
       ${renderConnectButtons(link)}
-      <button class="btn btn-ghost" onclick="showTab('plans')">${tr('renew_sub')}</button>
+      ${canRenew ? `<button class="btn btn-ghost" onclick="showTab('plans')">${tr('renew_sub')}</button>` : ''}
     `;
   }
 
@@ -1351,9 +1377,14 @@
     const plans = Object.keys(plansData).length ? plansData : (dashboard?.plans || {});
     const el = document.getElementById('plansList');
     let html = '';
+    const canRenew = dashboard?.can_renew || !dashboard?.has_subscription;
 
-    if (dashboard?.has_subscription) {
+    if (dashboard?.has_subscription && canRenew) {
       html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_renew_hint')}</p>`;
+    } else if (dashboard?.has_subscription && !canRenew) {
+      html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_locked_hint') || 'Тарифы доступны для продления за 14 дней до окончания подписки.'}</p>`;
+      el.innerHTML = html;
+      return;
     } else if (dashboard?.is_new_vpn_user) {
       html += `<p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5">${tr('plans_trial_hint')}</p>`;
     }

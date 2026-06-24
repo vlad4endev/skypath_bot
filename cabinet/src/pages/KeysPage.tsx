@@ -28,8 +28,10 @@ export function KeysPage() {
     load();
   }, [load]);
 
-  const subUrl = data?.subscription?.subscription_url || data?.subscription?.vpn_key || '';
-  const hasSub = data?.has_subscription;
+  const sub = data?.subscription;
+  const subUrl = sub?.subscription_url || sub?.vpn_key || '';
+  const hasLiveSub = data?.has_subscription;
+  const canRenew = data?.can_renew;
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -75,7 +77,7 @@ export function KeysPage() {
     );
   }
 
-  if (!hasSub) {
+  if (!sub && !canRenew) {
     return (
       <div className="page">
         <header className="page-header">
@@ -91,7 +93,23 @@ export function KeysPage() {
     );
   }
 
-  const traffic = data?.subscription?.traffic;
+  if (!hasLiveSub && canRenew) {
+    return (
+      <div className="page">
+        <header className="page-header">
+          <h1>VPN-ключи</h1>
+          <p className="subtitle">Подписка истекла</p>
+        </header>
+        <section className="card empty-card">
+          <KeyRound size={48} strokeWidth={1.5} />
+          <p>Продлите подписку, чтобы снова получить доступ к VPN.</p>
+          <Link to="/plans" className="btn btn--primary">Продлить подписку</Link>
+        </section>
+      </div>
+    );
+  }
+
+  const traffic = sub?.traffic;
   const used = (traffic?.up ?? 0) + (traffic?.down ?? 0);
 
   return (

@@ -41,6 +41,8 @@ export function PlansPage() {
 
   const plans = data?.plans ?? {};
   const plan: PlanInfo | null = selectedPlan ? plans[selectedPlan] ?? null : null;
+  const canRenew = data?.can_renew ?? !data?.has_subscription;
+  const plansLocked = Boolean(data?.has_subscription && !canRenew);
   const monthsLabels = useMemo(() => {
     const labels: Record<string, string> = {};
     if (plan?.prices) {
@@ -156,13 +158,17 @@ export function PlansPage() {
     );
   }
 
-  const showPlans = !data.has_subscription || !data.plans;
+  const showPlansBlocked = plansLocked;
 
   return (
     <div className="page plans-page">
       <header className="page-header">
-        <h1>Тарифы</h1>
-        <p className="subtitle">Выберите подходящий план</p>
+        <h1>{canRenew && data.has_subscription ? 'Продление' : 'Тарифы'}</h1>
+        <p className="subtitle">
+          {canRenew && data.has_subscription
+            ? 'Выберите срок продления подписки'
+            : 'Выберите подходящий план'}
+        </p>
       </header>
 
       {toast && <div className="inline-toast">{toast}</div>}
@@ -170,15 +176,23 @@ export function PlansPage() {
       {data.has_subscription && (
         <section className="card">
           <p>Текущий тариф: <strong>{data.subscription?.plan_name}</strong></p>
-          {data.subscription && data.subscription.days_left <= 14 && (
-            <p className="hint">Подписка скоро закончится — выберите тариф для продления.</p>
+          {canRenew && data.subscription && (
+            <p className="hint">
+              {data.subscription.is_active
+                ? `Подписка активна ещё ${data.subscription.days_left} дн. — можно продлить сейчас.`
+                : 'Подписка истекла — выберите тариф для продления.'}
+            </p>
           )}
         </section>
       )}
 
-      {showPlans && !Object.keys(plans).length ? (
+      {showPlansBlocked ? (
         <section className="card">
           <p>Тарифы недоступны при активной подписке. Обратитесь в поддержку для продления.</p>
+        </section>
+      ) : !Object.keys(plans).length ? (
+        <section className="card">
+          <p>Тарифы временно недоступны. Попробуйте обновить страницу или обратитесь в поддержку.</p>
         </section>
       ) : !selectedPlan ? (
         <div className="plans-grid">
@@ -283,7 +297,7 @@ export function PlansPage() {
               </div>
 
               <button type="button" className="btn btn--primary btn--block" onClick={handlePay} disabled={paying}>
-                {paying ? 'Оформление…' : `Оплатить ${finalPrice} ₽`}
+                {paying ? 'Оформление…' : canRenew && data.has_subscription ? `Продлить за ${finalPrice} ₽` : `Оплатить ${finalPrice} ₽`}
               </button>
             </div>
           )}
