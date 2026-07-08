@@ -123,6 +123,7 @@
     "payment_pending": "⏳ جاري معالجة الدفع. حدّث بعد دقيقة.",
     "payment_failed": "❌ الدفع لم يكتمل",
     "payment_checking": "جاري التحقق من الدفع…",
+    "payment_open_browser": "تم فتح صفحة الدفع في المتصفح. ارجع إلى Telegram بعد الدفع.",
     "connect_hint": "اضغط «اتصال» — يُضاف الاشتراك للتطبيق.",
     "traffic": "البيانات",
     "unlimited_traffic": "♾ بيانات غير محدودة",

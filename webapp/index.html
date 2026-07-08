@@ -1291,6 +1291,18 @@
     else window.open(url, '_blank');
   }
 
+  /** Внешние https-ссылки (Platega, банк СБП) — только через openLink внутри Telegram WebView. */
+  function openExternalLink(url) {
+    if (!url) return false;
+    tg?.HapticFeedback?.impactOccurred('medium');
+    if (tg?.openLink) {
+      tg.openLink(url);
+      return true;
+    }
+    window.location.href = url;
+    return false;
+  }
+
   function renderCabinet() {
     const sub = dashboard?.subscription;
     const user = dashboard?.user;
@@ -1637,7 +1649,9 @@
 
       if (data.payment_url) {
         sessionStorage.setItem('pending_order_id', data.order_id || '');
-        window.location.href = data.payment_url;
+        if (openExternalLink(data.payment_url)) {
+          showToast(tr('payment_open_browser'));
+        }
         return;
       }
       throw new Error(tr('empty_response'));
