@@ -1,0 +1,28 @@
+{
+  "name": "SkyPath VPN",
+  "short_name": "SkyPath",
+  "description": "Быстрый VPN с личным кабинетом",
+  "start_url": "/cabinet/app",
+  "scope": "/cabinet/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "background_color": "#060912",
+  "theme_color": "#060912",
+  "orientation": "portrait-primary",
+  "lang": "ru",
+  "categories": ["utilities", "security"],
+  "icons": [
+    {
+      "src": "/cabinet/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/cabinet/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

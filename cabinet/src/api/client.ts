@@ -60,6 +60,25 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
+  register: (payload: {
+    email: string;
+    password: string;
+    password_confirm?: string;
+    first_name?: string;
+    locale?: string;
+  }) =>
+    request<{ ok: boolean; token: string; message?: string }>('/cabinet/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  publicPlans: () =>
+    request<{
+      brand_name: string;
+      plans: import('../types').DashboardData['plans'];
+      locale: string;
+    }>('/cabinet/api/plans/public'),
+
   logout: () =>
     request<{ ok: boolean }>('/cabinet/api/auth/logout', { method: 'POST' }),
 
@@ -78,7 +97,10 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ locale }) },
     ),
 
-  config: () => request<import('../types').AppConfig>('/cabinet/api/config'),
+  config: () => request<import('../types').AppConfig & {
+    terms_url?: string;
+    privacy_url?: string;
+  }>('/cabinet/api/config'),
 
   dashboard: () => request<import('../types').DashboardData>('/cabinet/api/dashboard'),
 

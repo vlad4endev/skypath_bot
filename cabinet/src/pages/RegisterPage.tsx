@@ -1,27 +1,27 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, Navigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight } from 'lucide-react';
-import { ApiError, api } from '../api/client';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { ArrowRight, Lock, Mail, User } from 'lucide-react';
+import { ApiError } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../i18n/I18nContext';
 import { LoginPromo } from '../components/LoginPromo';
 import { Spinner } from '../components/ui';
+import { api } from '../api/client';
 
-export function LoginPage() {
-  const { authenticated, loading, login } = useAuth();
+export function RegisterPage() {
+  const { authenticated, loading, register } = useAuth();
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [brand, setBrand] = useState('SkyPath VPN');
-  const [supportUrl, setSupportUrl] = useState('');
 
   useEffect(() => {
-    api.config().then((cfg) => {
-      setBrand(cfg.brand_name);
-      setSupportUrl(cfg.support_url);
-    }).catch(() => {});
+    api.config().then((cfg) => setBrand(cfg.brand_name)).catch(() => {});
   }, []);
 
   if (loading) {
@@ -37,11 +37,23 @@ export function LoginPage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (password !== passwordConfirm) {
+      setError('Пароли не совпадают');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await login(email.trim(), password);
+      await register({
+        email: email.trim(),
+        password,
+        password_confirm: passwordConfirm,
+        first_name: name.trim() || undefined,
+      });
+      navigate('/app/plans', { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : t('login_error'));
+      setError(err instanceof ApiError ? err.message : 'Ошибка регистрации');
     } finally {
       setSubmitting(false);
     }
@@ -54,10 +66,25 @@ export function LoginPage() {
         <LoginPromo brand={brand} />
 
         <div className="login-card">
-          <h2>{t('login_title')}</h2>
-          <p className="login-hint">{t('login_subtitle')}</p>
+          <h2>{t('register_title')}</h2>
+          <p className="login-hint">{t('register_subtitle')}</p>
 
           <form onSubmit={onSubmit} className="login-form">
+            <label className="field">
+              <span>{t('register_name')}</span>
+              <div className="input-wrap">
+                <User size={18} className="input-icon" />
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Как к вам обращаться"
+                  autoComplete="name"
+                  autoFocus
+                />
+              </div>
+            </label>
+
             <label className="field">
               <span>{t('email')}</span>
               <div className="input-wrap">
@@ -68,7 +95,6 @@ export function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
                   autoComplete="email"
-                  autoFocus
                   required
                 />
               </div>
@@ -82,9 +108,26 @@ export function LoginPage() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
+                  placeholder="Минимум 8 символов"
+                  autoComplete="new-password"
                   required
+                  minLength={8}
+                />
+              </div>
+            </label>
+
+            <label className="field">
+              <span>{t('register_password_confirm')}</span>
+              <div className="input-wrap">
+                <Lock size={18} className="input-icon" />
+                <input
+                  type="password"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  placeholder="Ещё раз"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
                 />
               </div>
             </label>
@@ -94,7 +137,7 @@ export function LoginPage() {
             <button type="submit" className="btn btn--primary btn--block" disabled={submitting}>
               {submitting ? '…' : (
                 <>
-                  {t('login_btn')}
+                  {t('register_btn')}
                   <ArrowRight size={18} />
                 </>
               )}
@@ -102,15 +145,10 @@ export function LoginPage() {
           </form>
 
           <div className="login-footer">
-            <p>{t('register_no_account')}</p>
-            <Link to="/register" className="btn btn--secondary btn--block">
-              {t('register_btn')}
+            <p>{t('register_have_account')}</p>
+            <Link to="/login" className="btn btn--ghost btn--block">
+              {t('login_btn')}
             </Link>
-            {supportUrl && (
-              <a href={supportUrl} target="_blank" rel="noreferrer" className="support-link">
-                Нужна помощь?
-              </a>
-            )}
           </div>
         </div>
       </div>

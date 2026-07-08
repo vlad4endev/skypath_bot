@@ -2,15 +2,24 @@ import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { I18nProvider, useI18n } from './i18n/I18nContext';
+import { useMobileShell } from './hooks/useMobileShell';
 import { Layout } from './components/Layout';
+import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
 import { HomePage } from './pages/HomePage';
 import { KeysPage } from './pages/KeysPage';
 import { PlansPage } from './pages/PlansPage';
 import { SupportPage } from './pages/SupportPage';
 import { LanguagePage } from './pages/LanguagePage';
+import { ProfilePage } from './pages/ProfilePage';
 import { Spinner } from './components/ui';
 import { api } from './api/client';
+
+function MobileShell() {
+  useMobileShell();
+  return null;
+}
 
 function AuthI18nBridge() {
   const { authenticated } = useAuth();
@@ -95,8 +104,11 @@ function AppRoutes() {
     <>
       <PaymentReturnHandler />
       <Routes>
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route
+          path="/app"
           element={
             <ProtectedRoute>
               <Layout />
@@ -107,8 +119,15 @@ function AppRoutes() {
           <Route path="keys" element={<KeysPage />} />
           <Route path="plans" element={<PlansPage />} />
           <Route path="support" element={<SupportPage />} />
+          <Route path="profile" element={<ProfilePage />} />
           <Route path="language" element={<LanguagePage />} />
         </Route>
+        {/* Legacy redirects */}
+        <Route path="/keys" element={<Navigate to="/app/keys" replace />} />
+        <Route path="/plans" element={<Navigate to="/app/plans" replace />} />
+        <Route path="/support" element={<Navigate to="/app/support" replace />} />
+        <Route path="/language" element={<Navigate to="/app/language" replace />} />
+        <Route path="/profile" element={<Navigate to="/app/profile" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
@@ -120,6 +139,7 @@ export default function App() {
     <I18nProvider>
       <AuthProvider>
         <BrowserRouter basename="/cabinet">
+          <MobileShell />
           <AuthI18nBridge />
           <AppRoutes />
         </BrowserRouter>

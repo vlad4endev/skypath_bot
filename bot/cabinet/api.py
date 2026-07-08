@@ -19,8 +19,11 @@ from bot.services.miniapp_purchase import process_miniapp_purchase, _is_new_vpn_
 from bot.services.payment_processor import process_manual_check
 from bot.services.subscription_url import resolve_subscription_url
 from bot.services.user_auth import (
+    hash_user_password,
     normalize_email,
     validate_email,
+    validate_password,
+    validate_password_message,
     verify_user_password,
 )
 from bot.services.vpn_provision import ensure_subscription_link
@@ -32,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 PUBLIC_PATHS = {
     "/cabinet/api/auth/login",
+    "/cabinet/api/auth/register",
     "/cabinet/api/config",
+    "/cabinet/api/plans/public",
     "/cabinet/api/health",
 }
 
@@ -104,6 +109,72 @@ def require_user(handler: Callable[..., Awaitable[web.Response]]):
 def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
     auth = CabinetAuth(config)
     app.middlewares.insert(0, cabinet_middleware(auth))
+
+    async def register(request: web.Request) -> web.Response:
+        body = await _body(request)
+        email = (body.get("email") or "").strip()
+        password = body.get("password") or ""
+        password_confirm = body.get("password_confirm") or password
+        first_name = (body.get("first_name") or body.get("name") or "").strip() or None
+        locale = normalize_locale(body.get("locale") or request.query.get("lang") or "ru")
+
+        if not validate_email(email):
+            return _err(None, "invalid_email", 400)
+        pwd_error = validate_password(password)
+        if pwd_error:
+            return _error(
+                validate_password_message(pwd_error, locale) or api_msg(locale, pwd_error),
+                400,
+                code=pwd_error,
+            )
+        if password != password_confirm:
+            return _err(None, "password_mismatch", 400)
+
+        normalized = normalize_email(email)
+        async with async_session() as session:
+            user_repo = UserRepo(session)
+            existing = await user_repo.get_by_web_email(normalized)
+            if existing:
+                return _err(None, "email_taken", 409)
+            try:
+                password_hash = hash_user_password(password, config.WEB_PASSWORD_PEPPER)
+                user = await user_repo.create_web_user(
+                    email=normalized,
+                    password_hash=password_hash,
+                    first_name=first_name,
+                    preferred_locale=locale,
+                )
+            except ValueError as e:
+                if str(e) == "email_taken":
+                    return _err(None, "email_taken", 409)
+                if str(e) == "id_generation_failed":
+                    return _err(None, "registration_failed", 500)
+                return _err(None, "registration_failed", 400)
+
+        token = await auth.create_session(
+            user_id=user.id,
+            telegram_id=user.telegram_id,
+            email=user.web_email or normalized,
+        )
+        resp = _json({
+            "ok": True,
+            "token": token,
+            "message": api_msg(locale, "registration_complete"),
+            "user": {
+                "full_name": user.full_name,
+                "email": user.web_email,
+                "telegram_id": user.telegram_id,
+            },
+        })
+        resp.set_cookie(
+            "cabinet_token",
+            token,
+            httponly=True,
+            samesite="Lax",
+            max_age=60 * 60 * 24 * 7,
+            path="/",
+        )
+        return resp
 
     async def login(request: web.Request) -> web.Response:
         body = await _body(request)
@@ -186,9 +257,20 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             "brand_name": config.BRAND_NAME,
             "support_url": config.SUPPORT_URL,
             "bot_username": config.BOT_USERNAME,
+            "terms_url": config.TERMS_URL,
+            "privacy_url": config.PRIVACY_URL,
             "months_labels": months_labels(locale),
             "locale": locale,
             "i18n": i18n_bundle(locale),
+        })
+
+    async def get_public_plans(request: web.Request) -> web.Response:
+        locale = normalize_locale(request.query.get("lang") or request.query.get("locale"))
+        return _json({
+            "plans": miniapp_handler._serialize_plans(locale),
+            "months_labels": months_labels(locale),
+            "locale": locale,
+            "brand_name": config.BRAND_NAME,
         })
 
     @require_user
@@ -469,10 +551,12 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             })
 
     app.router.add_post("/cabinet/api/auth/login", login)
+    app.router.add_post("/cabinet/api/auth/register", register)
     app.router.add_post("/cabinet/api/auth/logout", logout)
     app.router.add_get("/cabinet/api/auth/me", me)
     app.router.add_get("/cabinet/api/health", health)
     app.router.add_get("/cabinet/api/config", get_config)
+    app.router.add_get("/cabinet/api/plans/public", get_public_plans)
     app.router.add_get("/cabinet/api/plans", get_plans)
     app.router.add_get("/cabinet/api/dashboard", get_dashboard)
     app.router.add_post("/cabinet/api/locale", set_locale)
@@ -494,9 +578,16 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
 
         app.router.add_get("/cabinet", _redirect_cabinet)
         app.router.add_get("/cabinet/", _serve_cabinet_spa)
-        for sub_path in ("home", "keys", "plans", "support", "login"):
+        spa_routes = (
+            "home", "keys", "plans", "support", "login", "register",
+            "profile", "language", "app",
+        )
+        for sub_path in spa_routes:
             app.router.add_get(f"/cabinet/{sub_path}", _serve_cabinet_spa)
             app.router.add_get(f"/cabinet/{sub_path}/", _serve_cabinet_spa)
+        for nested in ("app/keys", "app/plans", "app/support", "app/profile", "app/language"):
+            app.router.add_get(f"/cabinet/{nested}", _serve_cabinet_spa)
+            app.router.add_get(f"/cabinet/{nested}/", _serve_cabinet_spa)
 
         for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest"):
             static_path = cabinet_dist / static_name

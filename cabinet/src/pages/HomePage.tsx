@@ -124,12 +124,12 @@ export function HomePage() {
 
           <div className="card-actions">
             {sub.is_active && (
-              <Link to="/keys" className="btn btn--primary">
+              <Link to="/app/keys" className="btn btn--primary">
                 Подключить VPN
               </Link>
             )}
             {canRenew && (
-              <Link to="/plans" className="btn btn--secondary">
+              <Link to="/app/plans" className="btn btn--secondary">
                 {sub.is_active ? 'Продлить' : 'Возобновить подписку'}
               </Link>
             )}
@@ -140,7 +140,7 @@ export function HomePage() {
           <div className="empty-icon">🛡️</div>
           <h2>Нет активной подписки</h2>
           <p>Выберите тариф и получите доступ к VPN за пару минут.</p>
-          <Link to="/plans" className="btn btn--primary">
+          <Link to="/app/plans" className="btn btn--primary">
             Выбрать тариф
           </Link>
         </section>
@@ -149,15 +149,15 @@ export function HomePage() {
       <section className="card quick-links">
         <h3>Быстрые действия</h3>
         <div className="quick-grid">
-          <Link to="/keys" className="quick-item">
+          <Link to="/app/keys" className="quick-item">
             <KeyRoundIcon />
             <span>Мои ключи</span>
           </Link>
-          <Link to="/plans" className="quick-item">
+          <Link to="/app/plans" className="quick-item">
             <CreditIcon />
             <span>Тарифы</span>
           </Link>
-          <Link to="/support" className="quick-item">
+          <Link to="/app/support" className="quick-item">
             <HelpIcon />
             <span>Настройка</span>
           </Link>

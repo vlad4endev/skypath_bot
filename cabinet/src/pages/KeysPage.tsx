@@ -87,7 +87,7 @@ export function KeysPage() {
         <section className="card empty-card">
           <KeyRound size={48} strokeWidth={1.5} />
           <p>Активная подписка нужна для получения ключа.</p>
-          <Link to="/plans" className="btn btn--primary">Выбрать тариф</Link>
+          <Link to="/app/plans" className="btn btn--primary">Выбрать тариф</Link>
         </section>
       </div>
     );
@@ -103,7 +103,7 @@ export function KeysPage() {
         <section className="card empty-card">
           <KeyRound size={48} strokeWidth={1.5} />
           <p>Продлите подписку, чтобы снова получить доступ к VPN.</p>
-          <Link to="/plans" className="btn btn--primary">Продлить подписку</Link>
+          <Link to="/app/plans" className="btn btn--primary">Продлить подписку</Link>
         </section>
       </div>
     );

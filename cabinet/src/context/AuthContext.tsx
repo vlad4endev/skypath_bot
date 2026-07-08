@@ -20,6 +20,12 @@ interface AuthState {
   brand: string;
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<void>;
+  register: (payload: {
+    email: string;
+    password: string;
+    password_confirm?: string;
+    first_name?: string;
+  }) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -65,6 +71,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthenticated(true);
   }, []);
 
+  const register = useCallback(async (payload: {
+    email: string;
+    password: string;
+    password_confirm?: string;
+    first_name?: string;
+  }) => {
+    const res = await api.register(payload);
+    setToken(res.token);
+    const me = await api.me();
+    setBrand(me.brand || 'SkyPath VPN');
+    setUser(me.user);
+    setAuthenticated(true);
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await api.logout();
@@ -77,8 +97,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ loading, authenticated, brand, user, login, logout }),
-    [loading, authenticated, brand, user, login, logout],
+    () => ({ loading, authenticated, brand, user, login, register, logout }),
+    [loading, authenticated, brand, user, login, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

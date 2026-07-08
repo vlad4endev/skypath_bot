@@ -1,6 +1,7 @@
 """
 Репозиторий — все операции с БД (PostgreSQL вместо NocoDB)
 """
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import select, update, and_, or_, func
@@ -47,6 +48,43 @@ class UserRepo:
             select(User).where(User.web_email == normalized)
         )
         return result.scalar_one_or_none()
+
+    async def create_web_user(
+        self,
+        *,
+        email: str,
+        password_hash: str,
+        first_name: str | None = None,
+        preferred_locale: str | None = None,
+    ) -> User:
+        """Создать пользователя только для веб-приложения (без Telegram)."""
+        normalized = email.strip().lower()
+        existing = await self.get_by_web_email(normalized)
+        if existing:
+            raise ValueError("email_taken")
+
+        telegram_id: int | None = None
+        for _ in range(12):
+            candidate = -(secrets.randbelow(2**40) + 1)
+            if not await self.get_by_telegram_id(candidate):
+                telegram_id = candidate
+                break
+        if telegram_id is None:
+            raise ValueError("id_generation_failed")
+
+        display_name = (first_name or "").strip() or normalized.split("@")[0]
+        user = User(
+            telegram_id=telegram_id,
+            first_name=display_name,
+            web_email=normalized,
+            password_hash=password_hash,
+            web_registered_at=datetime.utcnow(),
+            preferred_locale=preferred_locale,
+        )
+        self.session.add(user)
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
 
     async def register_web_credentials(
         self,

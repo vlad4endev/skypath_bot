@@ -31,7 +31,7 @@ export function Logo({ size = 40, showText = true, brand = 'SkyPath' }: LogoProp
           x="24"
           y="26"
           textAnchor="middle"
-          fontFamily="Inter, system-ui, sans-serif"
+          fontFamily="Syne, system-ui, sans-serif"
           fontSize="14"
           fontWeight="900"
           fill="#ffffff"

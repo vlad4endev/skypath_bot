@@ -1,26 +1,26 @@
+import { Link } from 'react-router-dom';
 import { Globe, Shield, Smartphone, Sparkles, Zap } from 'lucide-react';
 import { Logo } from './ui';
 
 interface LoginPromoProps {
   brand: string;
-  botUsername?: string;
 }
 
 const BENEFITS = [
   {
     icon: Shield,
     title: 'Приватность',
-    text: 'Шифруем трафик — провайдер и Wi‑Fi не видят, что вы делаете в сети.',
+    text: 'Шифруем трафик — провайдер и Wi‑Fi не видят вашу активность.',
   },
   {
     icon: Zap,
     title: 'Скорость',
-    text: 'Серверы с высоким приоритетом — стриминг и игры без лагов.',
+    text: 'Приоритетные серверы для стриминга, игр и работы.',
   },
   {
     icon: Globe,
     title: 'Любые сайты',
-    text: 'Обход блокировок и доступ к сервисам из любой точки мира.',
+    text: 'Доступ к сервисам из любой точки мира без ограничений.',
   },
   {
     icon: Smartphone,
@@ -29,7 +29,7 @@ const BENEFITS = [
   },
 ];
 
-export function LoginPromo({ brand, botUsername }: LoginPromoProps) {
+export function LoginPromo({ brand }: LoginPromoProps) {
   return (
     <section className="login-promo" aria-label="О сервисе">
       <div className="login-promo__glow" aria-hidden />
@@ -42,28 +42,12 @@ export function LoginPromo({ brand, botUsername }: LoginPromoProps) {
       </div>
 
       <h1 className="login-promo__title">
-        VPN, который просто&nbsp;работает
+        {brand}
       </h1>
 
       <p className="login-promo__lead">
-        {brand} — быстрый и безопасный доступ в интернет.
-        Личный кабинет — ваш центр управления: подписка, ключи и оплата в одном месте.
+        Быстрый и безопасный VPN с личным кабинетом — подписка, ключи и оплата в одном месте.
       </p>
-
-      <div className="login-promo__stats">
-        <div className="login-promo__stat">
-          <strong>5+</strong>
-          <span>локаций</span>
-        </div>
-        <div className="login-promo__stat">
-          <strong>∞</strong>
-          <span>трафик</span>
-        </div>
-        <div className="login-promo__stat">
-          <strong>24/7</strong>
-          <span>поддержка</span>
-        </div>
-      </div>
 
       <div className="login-promo__cards">
         {BENEFITS.map(({ icon: Icon, title, text }) => (
@@ -79,20 +63,9 @@ export function LoginPromo({ brand, botUsername }: LoginPromoProps) {
         ))}
       </div>
 
-      {!botUsername && (
-        <p className="login-promo__footnote">
-          Подключение за 2 минуты: регистрация в боте → ключ → приложение Happ или v2rayTun.
-        </p>
-      )}
-      {botUsername && (
-        <p className="login-promo__footnote">
-          Нет аккаунта?{' '}
-          <a href={`https://t.me/${botUsername}`} target="_blank" rel="noreferrer">
-            Откройте @{botUsername}
-          </a>
-          {' '}— пробный период за пару кликов.
-        </p>
-      )}
+      <p className="login-promo__footnote">
+        <Link to="/">← На главную</Link>
+      </p>
     </section>
   );
 }
