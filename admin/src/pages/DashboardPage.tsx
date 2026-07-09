@@ -155,8 +155,8 @@ export function DashboardPage({ onXuiSync, onToast }: DashboardPageProps) {
   const diskPct = usagePct(server?.disk?.current, server?.disk?.total);
 
   return (
-    <div className="page">
-      <header className="page-header">
+    <div className="page dashboard-page">
+      <header className="page-header dashboard-page__header">
         <div>
           <h1>Дашборд</h1>
           <p className="page-desc">Обзор сервиса, клиентов и состояния VPN-сервера</p>
@@ -166,56 +166,8 @@ export function DashboardPage({ onXuiSync, onToast }: DashboardPageProps) {
         )}
       </header>
 
-      <section className="dashboard-top">
-        <div className="dashboard-top__main">
-          {stats && (
-            <div className="stat-grid">
-              <StatCard
-                label="Пользователей"
-                value={u!.total}
-                hint={`+${u!.new_24h} за 24ч · +${u!.new_7d} за 7д`}
-                icon={<Users size={22} />}
-                accent="#38bdf8"
-              />
-              <StatCard
-                label="Активных подписок"
-                value={s!.active}
-                hint={`${s!.pending} ожидают · ${s!.expired} истекли`}
-                icon={<Zap size={22} />}
-                accent="#818cf8"
-              />
-              <StatCard
-                label="Истекают завтра"
-                value={s!.expiring_tomorrow}
-                icon={<Clock size={22} />}
-                accent="#fbbf24"
-              />
-              <StatCard
-                label="Выручка 30д"
-                value={fmtMoney(p!.revenue_30d)}
-                hint={`${p!.count_30d} платежей`}
-                icon={<Wallet size={22} />}
-                accent="#34d399"
-              />
-              <StatCard
-                label="Без VPN-ключа"
-                value={p!.unfulfilled}
-                hint={`${p!.pending} ожидают оплаты`}
-                icon={<AlertTriangle size={22} />}
-                accent={p!.unfulfilled ? '#f87171' : '#64748b'}
-              />
-              <StatCard
-                label="Заблокировано"
-                value={u!.banned}
-                hint={`${stats.promos.active} активных промо`}
-                icon={<Ban size={22} />}
-                accent="#94a3b8"
-              />
-            </div>
-          )}
-        </div>
-
-        <article className="card server-panel">
+      <section className="dashboard-bento">
+        <article className="card server-panel dashboard-bento__server">
           <header className="server-panel__header">
             <div className="server-panel__title">
               <Server size={20} />
@@ -240,7 +192,7 @@ export function DashboardPage({ onXuiSync, onToast }: DashboardPageProps) {
           ) : xuiError ? (
             <p className="banner banner--error">{xuiError}</p>
           ) : server ? (
-            <>
+            <div className="server-panel__body">
               <div className="server-panel__badges">
                 <XrayBadge state={server.xray?.state} />
                 {server.xray?.version && (
@@ -294,180 +246,113 @@ export function DashboardPage({ onXuiSync, onToast }: DashboardPageProps) {
                   <strong>{fmtBytes(server.netIO?.down ?? server.netTraffic?.recv)}</strong>
                 </div>
               </div>
-            </>
+            </div>
           ) : null}
         </article>
+
+        <div className="dashboard-bento__stats">
+          {stats && (
+            <div className="dashboard-stat-block">
+              <p className="dashboard-stat-block__label">Сервис</p>
+              <div className="dashboard-stat-group">
+                <StatCard
+                  label="Пользователей"
+                  value={u!.total}
+                  hint={`+${u!.new_24h} за 24ч · +${u!.new_7d} за 7д`}
+                  icon={<Users size={22} />}
+                  accent="#38bdf8"
+                />
+                <StatCard
+                  label="Активных подписок"
+                  value={s!.active}
+                  hint={`${s!.pending} ожидают · ${s!.expired} истекли`}
+                  icon={<Zap size={22} />}
+                  accent="#818cf8"
+                />
+                <StatCard
+                  label="Истекают завтра"
+                  value={s!.expiring_tomorrow}
+                  icon={<Clock size={22} />}
+                  accent="#fbbf24"
+                />
+                <StatCard
+                  label="Выручка 30д"
+                  value={fmtMoney(p!.revenue_30d)}
+                  hint={`${p!.count_30d} платежей`}
+                  icon={<Wallet size={22} />}
+                  accent="#34d399"
+                />
+                <StatCard
+                  label="Без VPN-ключа"
+                  value={p!.unfulfilled}
+                  hint={`${p!.pending} ожидают оплаты`}
+                  icon={<AlertTriangle size={22} />}
+                  accent={p!.unfulfilled ? '#f87171' : '#64748b'}
+                />
+                <StatCard
+                  label="Заблокировано"
+                  value={u!.banned}
+                  hint={`${stats.promos.active} активных промо`}
+                  icon={<Ban size={22} />}
+                  accent="#94a3b8"
+                />
+              </div>
+            </div>
+          )}
+
+          {analytics && (
+            <div className="dashboard-stat-block">
+              <p className="dashboard-stat-block__label">Клиенты</p>
+              <div className="dashboard-stat-group">
+                <StatCard
+                  label="Платящие клиенты"
+                  value={analytics.paying_users}
+                  hint={`конверсия ${fmtPct(analytics.conversion_pct)}`}
+                  icon={<TrendingUp size={22} />}
+                  accent="#34d399"
+                />
+                <StatCard
+                  label="Средний LTV"
+                  value={fmtMoney(analytics.avg_ltv)}
+                  hint={`средний чек ${fmtMoney(analytics.avg_payment)}`}
+                  icon={<Wallet size={22} />}
+                  accent="#38bdf8"
+                />
+                <StatCard
+                  label="Повторные оплаты"
+                  value={analytics.repeat_payers}
+                  hint={`${fmtPct(analytics.repeat_rate_pct)} клиентов`}
+                  icon={<Repeat size={22} />}
+                  accent="#818cf8"
+                />
+                <StatCard
+                  label="Без оплат"
+                  value={analytics.never_paid}
+                  hint="зарегистрировались, не платили"
+                  icon={<UserMinus size={22} />}
+                  accent="#94a3b8"
+                />
+                <StatCard
+                  label="Не платили 30+ дн."
+                  value={analytics.inactive_payers.days_30}
+                  hint={`60д: ${analytics.inactive_payers.days_60} · 90д: ${analytics.inactive_payers.days_90}`}
+                  icon={<Activity size={22} />}
+                  accent="#f87171"
+                />
+                <StatCard
+                  label="Истекли (были клиентами)"
+                  value={analytics.expired_paid}
+                  hint={`${analytics.active_paying} активных с оплатой`}
+                  icon={<Clock size={22} />}
+                  accent="#fbbf24"
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
-      {analytics && (
-        <section className="stat-grid stat-grid--analytics">
-          <StatCard
-            label="Платящие клиенты"
-            value={analytics.paying_users}
-            hint={`конверсия ${fmtPct(analytics.conversion_pct)}`}
-            icon={<TrendingUp size={22} />}
-            accent="#34d399"
-          />
-          <StatCard
-            label="Средний LTV"
-            value={fmtMoney(analytics.avg_ltv)}
-            hint={`средний чек ${fmtMoney(analytics.avg_payment)}`}
-            icon={<Wallet size={22} />}
-            accent="#38bdf8"
-          />
-          <StatCard
-            label="Повторные оплаты"
-            value={analytics.repeat_payers}
-            hint={`${fmtPct(analytics.repeat_rate_pct)} клиентов`}
-            icon={<Repeat size={22} />}
-            accent="#818cf8"
-          />
-          <StatCard
-            label="Без оплат"
-            value={analytics.never_paid}
-            hint="зарегистрировались, не платили"
-            icon={<UserMinus size={22} />}
-            accent="#94a3b8"
-          />
-          <StatCard
-            label="Не платили 30+ дн."
-            value={analytics.inactive_payers.days_30}
-            hint={`60д: ${analytics.inactive_payers.days_60} · 90д: ${analytics.inactive_payers.days_90}`}
-            icon={<Activity size={22} />}
-            accent="#f87171"
-          />
-          <StatCard
-            label="Истекли (были клиентами)"
-            value={analytics.expired_paid}
-            hint={`${analytics.active_paying} активных с оплатой`}
-            icon={<Clock size={22} />}
-            accent="#fbbf24"
-          />
-        </section>
-      )}
-
-      <section className="dashboard-tables">
-        <article className="card table-card">
-          <header className="dashboard-table-header">
-            <div>
-              <h3>Давно не оплачивали</h3>
-              <p>Клиенты с успешными платежами, но без оплаты давно</p>
-            </div>
-            <select
-              value={inactiveDays}
-              onChange={(e) => setInactiveDays(Number(e.target.value))}
-              className="toolbar-field toolbar-field--select"
-              aria-label="Период без оплаты"
-            >
-              {INACTIVE_DAYS_OPTIONS.map((d) => (
-                <option key={d} value={d}>Более {d} дней</option>
-              ))}
-            </select>
-          </header>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Клиент</th>
-                  <th>Подписка</th>
-                  <th>Последняя оплата</th>
-                  <th>Дней назад</th>
-                  <th>Потрачено</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {inactivePayers.length === 0 ? (
-                  <tr><td colSpan={6} className="empty-cell">Нет таких клиентов</td></tr>
-                ) : (
-                  inactivePayers.map((row) => (
-                    <tr key={row.id}>
-                      <td>
-                        <div className="cell-user">
-                          <strong>{row.full_name}</strong>
-                          <span className="cell-muted">
-                            {row.username ? `@${row.username}` : `#${row.telegram_id}`}
-                          </span>
-                        </div>
-                      </td>
-                      <td className={daysLeftClass(row.subscription)}>
-                        {row.subscription?.status ?? '—'}
-                        {row.subscription?.plan ? ` · ${row.subscription.plan}` : ''}
-                      </td>
-                      <td>{fmtDate(row.last_paid_at)}</td>
-                      <td className="text-danger">{row.days_since_payment}</td>
-                      <td>{fmtMoney(row.total_spent)}</td>
-                      <td className="actions">
-                        <button
-                          type="button"
-                          className="btn btn--ghost btn--sm"
-                          onClick={() => setSelectedUserId(row.id)}
-                        >
-                          Карточка
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </article>
-
-        <article className="card table-card">
-          <header className="dashboard-table-header">
-            <div>
-              <h3>Новые пользователи</h3>
-              <p>Последние регистрации и статус подписки</p>
-            </div>
-          </header>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Клиент</th>
-                  <th>Регистрация</th>
-                  <th>Подписка</th>
-                  <th>Осталось</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {recentUsers.length === 0 ? (
-                  <tr><td colSpan={5} className="empty-cell">Нет данных</td></tr>
-                ) : (
-                  recentUsers.map((row) => (
-                    <tr key={row.id}>
-                      <td>
-                        <div className="cell-user">
-                          <strong>{row.full_name}</strong>
-                          <span className="cell-muted">
-                            {row.username ? `@${row.username}` : `#${row.telegram_id}`}
-                          </span>
-                        </div>
-                      </td>
-                      <td>{fmtDate(row.created_at)}</td>
-                      <td>{row.subscription?.status ?? '—'}</td>
-                      <td className={daysLeftClass(row.subscription)}>{fmtDaysLeft(row.subscription)}</td>
-                      <td className="actions">
-                        <button
-                          type="button"
-                          className="btn btn--ghost btn--sm"
-                          onClick={() => setSelectedUserId(row.id)}
-                        >
-                          Карточка
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <section className="charts-grid">
+      <section className="dashboard-charts">
         <article className="card chart-card">
           <h3>Выручка за 30 дней</h3>
           <div className="chart-wrap">
@@ -523,10 +408,10 @@ export function DashboardPage({ onXuiSync, onToast }: DashboardPageProps) {
           </div>
         </article>
 
-        <article className="card chart-card chart-card--wide">
+        <article className="card chart-card chart-card--plans">
           <h3>Распределение тарифов</h3>
           <div className="chart-wrap chart-wrap--pie">
-            <ResponsiveContainer width="100%" height={260}>
+            <ResponsiveContainer width="100%" height={240}>
               <PieChart>
                 <Pie
                   data={plans}
@@ -534,8 +419,8 @@ export function DashboardPage({ onXuiSync, onToast }: DashboardPageProps) {
                   nameKey="plan"
                   cx="50%"
                   cy="50%"
-                  innerRadius={60}
-                  outerRadius={95}
+                  innerRadius={55}
+                  outerRadius={88}
                   paddingAngle={3}
                 >
                   {plans.map((entry, i) => (
@@ -560,6 +445,209 @@ export function DashboardPage({ onXuiSync, onToast }: DashboardPageProps) {
               ))}
             </div>
           </div>
+        </article>
+      </section>
+
+      <section className="dashboard-tables">
+        <article className="card table-card">
+          <header className="dashboard-table-header">
+            <div>
+              <h3>Давно не оплачивали</h3>
+              <p>Клиенты с успешными платежами, но без оплаты давно</p>
+            </div>
+            <select
+              value={inactiveDays}
+              onChange={(e) => setInactiveDays(Number(e.target.value))}
+              className="toolbar-field toolbar-field--select"
+              aria-label="Период без оплаты"
+            >
+              {INACTIVE_DAYS_OPTIONS.map((d) => (
+                <option key={d} value={d}>Более {d} дней</option>
+              ))}
+            </select>
+          </header>
+          <div className="table-wrap table-wrap--desktop">
+            <table>
+              <thead>
+                <tr>
+                  <th>Клиент</th>
+                  <th>Подписка</th>
+                  <th>Последняя оплата</th>
+                  <th>Дней назад</th>
+                  <th>Потрачено</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {inactivePayers.length === 0 ? (
+                  <tr><td colSpan={6} className="empty-cell">Нет таких клиентов</td></tr>
+                ) : (
+                  inactivePayers.map((row) => (
+                    <tr key={row.id}>
+                      <td>
+                        <div className="cell-user">
+                          <strong>{row.full_name}</strong>
+                          <span className="cell-muted">
+                            {row.username ? `@${row.username}` : `#${row.telegram_id}`}
+                          </span>
+                        </div>
+                      </td>
+                      <td className={daysLeftClass(row.subscription)}>
+                        {row.subscription?.status ?? '—'}
+                        {row.subscription?.plan ? ` · ${row.subscription.plan}` : ''}
+                      </td>
+                      <td>{fmtDate(row.last_paid_at)}</td>
+                      <td className="text-danger">{row.days_since_payment}</td>
+                      <td>{fmtMoney(row.total_spent)}</td>
+                      <td className="actions">
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm"
+                          onClick={() => setSelectedUserId(row.id)}
+                        >
+                          Карточка
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <ul className="mobile-data-list" aria-label="Клиенты без оплат">
+            {inactivePayers.length === 0 ? (
+              <li><p className="mobile-data-card__empty">Нет таких клиентов</p></li>
+            ) : (
+              inactivePayers.map((row) => (
+                <li key={row.id} className="mobile-data-card">
+                  <div className="mobile-data-card__head">
+                    <div className="cell-user">
+                      <strong>{row.full_name}</strong>
+                      <span className="cell-muted">
+                        {row.username ? `@${row.username}` : `#${row.telegram_id}`}
+                      </span>
+                    </div>
+                    <span className={`badge badge--muted ${daysLeftClass(row.subscription)}`}>
+                      {row.subscription?.status ?? '—'}
+                    </span>
+                  </div>
+                  <dl className="mobile-data-card__rows">
+                    <div className="mobile-data-card__row">
+                      <dt>Тариф</dt>
+                      <dd>{row.subscription?.plan ?? '—'}</dd>
+                    </div>
+                    <div className="mobile-data-card__row">
+                      <dt>Последняя оплата</dt>
+                      <dd>{fmtDate(row.last_paid_at)}</dd>
+                    </div>
+                    <div className="mobile-data-card__row">
+                      <dt>Дней назад</dt>
+                      <dd className="text-danger">{row.days_since_payment}</dd>
+                    </div>
+                    <div className="mobile-data-card__row">
+                      <dt>Потрачено</dt>
+                      <dd>{fmtMoney(row.total_spent)}</dd>
+                    </div>
+                  </dl>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    onClick={() => setSelectedUserId(row.id)}
+                  >
+                    Карточка
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </article>
+
+        <article className="card table-card">
+          <header className="dashboard-table-header">
+            <div>
+              <h3>Новые пользователи</h3>
+              <p>Последние регистрации и статус подписки</p>
+            </div>
+          </header>
+          <div className="table-wrap table-wrap--desktop">
+            <table>
+              <thead>
+                <tr>
+                  <th>Клиент</th>
+                  <th>Регистрация</th>
+                  <th>Подписка</th>
+                  <th>Осталось</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {recentUsers.length === 0 ? (
+                  <tr><td colSpan={5} className="empty-cell">Нет данных</td></tr>
+                ) : (
+                  recentUsers.map((row) => (
+                    <tr key={row.id}>
+                      <td>
+                        <div className="cell-user">
+                          <strong>{row.full_name}</strong>
+                          <span className="cell-muted">
+                            {row.username ? `@${row.username}` : `#${row.telegram_id}`}
+                          </span>
+                        </div>
+                      </td>
+                      <td>{fmtDate(row.created_at)}</td>
+                      <td>{row.subscription?.status ?? '—'}</td>
+                      <td className={daysLeftClass(row.subscription)}>{fmtDaysLeft(row.subscription)}</td>
+                      <td className="actions">
+                        <button
+                          type="button"
+                          className="btn btn--ghost btn--sm"
+                          onClick={() => setSelectedUserId(row.id)}
+                        >
+                          Карточка
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          <ul className="mobile-data-list" aria-label="Новые пользователи">
+            {recentUsers.length === 0 ? (
+              <li><p className="mobile-data-card__empty">Нет данных</p></li>
+            ) : (
+              recentUsers.map((row) => (
+                <li key={row.id} className="mobile-data-card">
+                  <div className="mobile-data-card__head">
+                    <div className="cell-user">
+                      <strong>{row.full_name}</strong>
+                      <span className="cell-muted">
+                        {row.username ? `@${row.username}` : `#${row.telegram_id}`}
+                      </span>
+                    </div>
+                    <span className="badge badge--muted">{row.subscription?.status ?? '—'}</span>
+                  </div>
+                  <dl className="mobile-data-card__rows">
+                    <div className="mobile-data-card__row">
+                      <dt>Регистрация</dt>
+                      <dd>{fmtDate(row.created_at)}</dd>
+                    </div>
+                    <div className="mobile-data-card__row">
+                      <dt>Осталось</dt>
+                      <dd className={daysLeftClass(row.subscription)}>{fmtDaysLeft(row.subscription)}</dd>
+                    </div>
+                  </dl>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    onClick={() => setSelectedUserId(row.id)}
+                  >
+                    Карточка
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
         </article>
       </section>
 

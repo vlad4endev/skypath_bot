@@ -1,6 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
-  Globe,
   Home,
   KeyRound,
   CreditCard,

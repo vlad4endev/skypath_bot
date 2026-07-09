@@ -36,6 +36,7 @@ async def process_miniapp_purchase(
     first_name: str | None = None,
     last_name: str | None = None,
     bot: Any | None = None,
+    for_cabinet: bool = False,
 ) -> dict[str, Any]:
     """Создать заказ из Mini App. Возвращает dict для JSON-ответа."""
     plan_cfg = PLANS.get(plan)
@@ -79,7 +80,8 @@ async def process_miniapp_purchase(
             first_name=first_name,
             last_name=last_name,
             promo_code=promo_code,
-            for_miniapp=True,
+            for_miniapp=not for_cabinet,
+            for_cabinet=for_cabinet,
         )
     except ValueError as e:
         err_key = str(e)

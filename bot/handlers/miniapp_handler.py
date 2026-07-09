@@ -233,7 +233,11 @@ async def get_dashboard(request: web.Request) -> web.Response:
     has_subscription = sub is not None and _is_subscription_live(sub)
     can_renew = _subscription_can_renew(sub)
     show_plans = _plans_available_for_user(sub, has_subscription=has_subscription)
+    if user and not user.web_registered:
+        show_plans = False
     is_new_vpn_user = _is_new_vpn_user(all_subs)
+
+    from bot.keyboards.webapp import cabinet_register_url
 
     locale = _resolve_request_locale(request, user)
 
@@ -272,6 +276,7 @@ async def get_dashboard(request: web.Request) -> web.Response:
         "is_new_vpn_user": is_new_vpn_user,
         "needs_registration": bool(user and not user.web_registered),
         "web_registered": bool(user and user.web_registered),
+        "register_url": cabinet_register_url() if user and not user.web_registered else None,
         "subscription": subscription_data,
         "plans": _serialize_plans(locale) if show_plans else None,
     })
@@ -489,110 +494,24 @@ async def provision_vpn(request: web.Request) -> web.Response:
 
 
 async def register_web_account(request: web.Request) -> web.Response:
-    """Первичная регистрация email + пароль для будущего входа в веб-версию."""
+    """Регистрация только через веб-приложение (/cabinet/register)."""
+    from bot.keyboards.webapp import cabinet_register_url
+
     locale = "ru"
     try:
         data = await request.json()
-        telegram_id = int(data.get("telegram_id", 0))
-        email = (data.get("email") or "").strip()
-        password = data.get("password") or ""
-        password_confirm = data.get("password_confirm") or password
+        locale = normalize_locale(data.get("locale") or "ru")
+    except Exception:
+        pass
 
-        if telegram_id <= 0:
-            return web.json_response(
-                {"error": "invalid_request", "message": api_msg(locale, "invalid_request")},
-                status=400,
-            )
-        if not validate_email(email):
-            return web.json_response(
-                {"error": "invalid_email", "message": api_msg(locale, "invalid_email")},
-                status=400,
-            )
-
-        pwd_error = validate_password(password)
-        if pwd_error:
-            return web.json_response(
-                {
-                    "error": "weak_password",
-                    "message": validate_password_message(pwd_error, locale),
-                },
-                status=400,
-            )
-        if password != password_confirm:
-            return web.json_response(
-                {
-                    "error": "password_mismatch",
-                    "message": api_msg(locale, "password_mismatch"),
-                },
-                status=400,
-            )
-
-        async with async_session() as session:
-            user_repo = UserRepo(session)
-            user, _ = await user_repo.get_or_create(
-                telegram_id=telegram_id,
-                username=data.get("username") or None,
-                first_name=data.get("first_name") or None,
-                last_name=data.get("last_name") or None,
-            )
-            locale = get_api_locale(user)
-
-            if user.is_banned:
-                return web.json_response(
-                    {"error": "banned", "message": api_msg(locale, "banned")},
-                    status=403,
-                )
-
-            existing_email = await user_repo.get_by_web_email(normalize_email(email))
-            if existing_email and existing_email.id != user.id:
-                return web.json_response(
-                    {"error": "email_taken", "message": api_msg(locale, "email_taken")},
-                    status=409,
-                )
-
-            if user.web_registered:
-                return web.json_response(
-                    {
-                        "error": "already_registered",
-                        "message": api_msg(locale, "already_registered"),
-                        "web_email": user.web_email,
-                    },
-                    status=409,
-                )
-
-            password_hash = hash_user_password(password, config.WEB_PASSWORD_PEPPER)
-            user = await user_repo.register_web_credentials(
-                user,
-                email=email,
-                password_hash=password_hash,
-            )
-
-        return web.json_response({
-            "ok": True,
-            "web_email": user.web_email,
-            "message": api_msg(locale, "registration_complete"),
-        })
-    except ValueError as e:
-        if str(e) == "email_taken":
-            return web.json_response(
-                {"error": "email_taken", "message": api_msg(locale, "email_taken")},
-                status=409,
-            )
-        if str(e) == "already_registered":
-            return web.json_response(
-                {"error": "already_registered", "message": api_msg(locale, "already_registered")},
-                status=409,
-            )
-        return web.json_response(
-            {"error": str(e), "message": api_msg(locale, "generic_error")},
-            status=400,
-        )
-    except Exception as e:
-        logger.error("Register web account error: %s", e)
-        return web.json_response(
-            {"error": "registration_failed", "message": api_msg(locale, "registration_failed")},
-            status=500,
-        )
+    return web.json_response(
+        {
+            "error": "use_web_app",
+            "message": api_msg(locale, "use_web_app"),
+            "register_url": cabinet_register_url(),
+        },
+        status=410,
+    )
 
 
 async def get_payment_status(request: web.Request) -> web.Response:

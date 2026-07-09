@@ -1260,28 +1260,27 @@
 
     if (!dashboard.needs_registration) return '';
 
+    const registerUrl = `${url.replace(/\/$/, '')}/register`;
     return `
       <div class="card card-glow web-access">
         <div class="web-access-head">
           <div class="web-access-icon">🌐</div>
           <div class="web-access-copy">
             <div class="web-access-title">${tr('web_login')}</div>
-            <div class="web-access-desc">${tr('web_login_hint', { host: escapeHtml(host) })}</div>
+            <div class="web-access-desc">${tr('web_register_only')}</div>
           </div>
           <span class="brand-pill web-access-badge">${tr('web_new')}</span>
         </div>
-        <form class="web-access-form" onsubmit="submitRegistration(event)">
-          <div class="web-access-fields">
-            <input id="webAccessEmail" type="email" inputmode="email" autocomplete="email" placeholder="${tr('email')}" required />
-            <div class="web-access-pass-row">
-              <input id="webAccessPassword" type="password" autocomplete="new-password" placeholder="${tr('password')}" minlength="8" required />
-              <input id="webAccessPasswordConfirm" type="password" autocomplete="new-password" placeholder="${tr('password_confirm')}" minlength="8" required />
-            </div>
-          </div>
-          <p class="web-access-error hidden" id="webAccessError"></p>
-          <button type="submit" class="btn btn-primary web-access-btn" id="webAccessBtn">${tr('web_save')}</button>
-        </form>
+        <button type="button" class="btn btn-primary web-access-btn" onclick="openRegister()">${tr('web_register_btn')}</button>
       </div>`;
+  }
+
+  function openRegister() {
+    const url = cabinetUrl || `${window.location.origin}/cabinet`;
+    const registerUrl = `${url.replace(/\/$/, '')}/register`;
+    tg?.HapticFeedback?.impactOccurred('light');
+    if (tg?.openLink) tg.openLink(registerUrl);
+    else window.open(registerUrl, '_blank');
   }
 
   function openCabinet() {

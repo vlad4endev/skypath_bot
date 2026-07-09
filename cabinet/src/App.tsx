@@ -42,7 +42,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  if (!authenticated) return <Navigate to="/login" replace />;
+  if (!authenticated) return <Navigate to="/register" replace />;
   return <>{children}</>;
 }
 

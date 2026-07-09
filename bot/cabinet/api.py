@@ -252,13 +252,17 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
         return _json({"status": "ok"})
 
     async def get_config(request: web.Request) -> web.Response:
+        from bot.keyboards.webapp import cabinet_app_url, cabinet_login_url, cabinet_register_url
+
         locale = normalize_locale(request.query.get("lang") or request.query.get("locale"))
         return _json({
             "brand_name": config.BRAND_NAME,
             "support_url": config.SUPPORT_URL,
-            "bot_username": config.BOT_USERNAME,
             "terms_url": config.TERMS_URL,
             "privacy_url": config.PRIVACY_URL,
+            "register_url": cabinet_register_url(),
+            "login_url": cabinet_login_url(),
+            "app_url": cabinet_app_url(),
             "months_labels": months_labels(locale),
             "locale": locale,
             "i18n": i18n_bundle(locale),
@@ -385,6 +389,7 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
                 first_name=user.first_name,
                 last_name=user.last_name,
                 bot=bot,
+                for_cabinet=True,
             )
 
             if result.get("error"):

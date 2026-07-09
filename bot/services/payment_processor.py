@@ -11,7 +11,12 @@ from typing import Any, Optional
 from aiogram import Bot
 
 from bot.config import Config, PLANS
-from bot.keyboards.webapp import is_miniapp_available, miniapp_payment_return_url
+from bot.keyboards.webapp import (
+    cabinet_payment_return_url,
+    is_cabinet_available,
+    is_miniapp_available,
+    miniapp_payment_return_url,
+)
 from bot.services.payment import (
     PlategaClient,
     PlategaWebhookEvent,
@@ -55,6 +60,7 @@ async def create_paid_order(
     last_name: str | None = None,
     promo_code: str | None = None,
     for_miniapp: bool = False,
+    for_cabinet: bool = False,
 ) -> CreateOrderResult:
     """Создать подписку (ожидает оплаты) и платёж в БД + Platega."""
     plan = PLANS.get(plan_key)
@@ -151,7 +157,10 @@ async def create_paid_order(
         order_id = str(uuid.uuid4())
         return_url = None
         failed_url = None
-        if for_miniapp and is_miniapp_available():
+        if for_cabinet and is_cabinet_available():
+            return_url = cabinet_payment_return_url(order_id, "success")
+            failed_url = cabinet_payment_return_url(order_id, "failed")
+        elif for_miniapp and is_miniapp_available():
             return_url = miniapp_payment_return_url(order_id, "success")
             failed_url = miniapp_payment_return_url(order_id, "failed")
 

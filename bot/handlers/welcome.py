@@ -5,43 +5,44 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.config import Config
 from bot.i18n import t
 from bot.keyboards.webapp import (
-    buy_vpn_button,
-    cabinet_button,
+    is_cabinet_available,
     is_miniapp_available,
-    web_cabinet_button,
+    open_app_button,
+    register_app_button,
 )
 
 config = Config()
 
 
-def main_keyboard(has_subscription: bool = False, locale: str = "ru") -> InlineKeyboardMarkup:
+def main_keyboard(
+    has_subscription: bool = False,
+    *,
+    web_registered: bool = False,
+    locale: str = "ru",
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
-    if is_miniapp_available():
+    if is_cabinet_available():
+        if not web_registered:
+            builder.row(register_app_button(locale=locale))
+            builder.row(open_app_button(t(locale, "menu.open_app"), locale=locale))
+        elif has_subscription:
+            builder.row(open_app_button(t(locale, "menu.cabinet"), locale=locale))
+        else:
+            builder.row(open_app_button(t(locale, "menu.buy_vpn"), path="plans", locale=locale))
+    elif is_miniapp_available():
+        from bot.keyboards.webapp import buy_vpn_button, cabinet_button
+
         if has_subscription:
             builder.row(cabinet_button(t(locale, "menu.cabinet"), locale=locale))
         else:
             builder.row(buy_vpn_button(t(locale, "menu.buy_vpn"), locale=locale))
-    else:
-        if has_subscription:
-            builder.row(
-                InlineKeyboardButton(
-                    text=t(locale, "menu.cabinet"),
-                    callback_data="account",
-                ),
-            )
-        else:
-            builder.row(
-                InlineKeyboardButton(text=t(locale, "menu.buy_vpn"), callback_data="plans"),
-            )
 
     if has_subscription:
         builder.row(
             InlineKeyboardButton(text=t(locale, "menu.my_keys"), callback_data="my_vpn"),
             InlineKeyboardButton(text=t(locale, "menu.account"), callback_data="account"),
         )
-
-    builder.row(web_cabinet_button(t(locale, "menu.web_cabinet"), locale=locale))
 
     builder.row(
         InlineKeyboardButton(text=t(locale, "menu.reviews"), callback_data="reviews"),
@@ -73,11 +74,16 @@ def send_welcome_for_user(
     locale: str,
     has_subscription: bool,
     is_new_user: bool = False,
+    web_registered: bool = False,
 ) -> tuple[str, InlineKeyboardMarkup]:
     if is_new_user:
         welcome = welcome_text_new(locale) + t(locale, "welcome.new_trial")
     else:
         name = first_name or t(locale, "welcome.friend")
         welcome = welcome_text_returning(name, has_subscription=has_subscription, locale=locale)
-    kb = main_keyboard(has_subscription=has_subscription, locale=locale)
+    kb = main_keyboard(
+        has_subscription=has_subscription,
+        web_registered=web_registered,
+        locale=locale,
+    )
     return welcome, kb

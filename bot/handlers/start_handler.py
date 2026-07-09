@@ -117,6 +117,7 @@ async def cmd_start(
         locale=locale,
         has_subscription=has_subscription,
         is_new_user=is_new_user,
+        web_registered=bool(db_user.web_registered),
     )
 
     await _send_welcome(
@@ -140,6 +141,7 @@ async def cb_main(call: CallbackQuery, db_user=None):
         call.from_user.first_name,
         locale=locale,
         has_subscription=has_subscription,
+        web_registered=bool(db_user and db_user.web_registered),
     )
     if call.message.photo:
         await call.message.edit_caption(caption=welcome, reply_markup=kb)
