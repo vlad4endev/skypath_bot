@@ -28,7 +28,7 @@ export function LoginPage() {
       <div className="login-bg" aria-hidden />
       <div className="login-card">
         <div className="login-header">
-          <Logo size={52} brand="SkyPath" />
+          <Logo size={52} brand="SKYFLOW" />
           <p className="login-subtitle">Панель управления VPN-сервисом</p>
         </div>
         <form onSubmit={onSubmit} className="login-form">

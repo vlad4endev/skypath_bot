@@ -1,47 +1,24 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
+const LOGO_SRC = '/admin/logo.png';
+
 interface LogoProps {
   size?: number;
   showText?: boolean;
   brand?: string;
 }
 
-export function Logo({ size = 40, showText = true, brand = 'SkyPath' }: LogoProps) {
+export function Logo({ size = 40, showText = true, brand = 'SKYFLOW' }: LogoProps) {
   return (
     <div className="logo" style={{ '--logo-size': `${size}px` } as React.CSSProperties}>
-      <svg
+      <img
         className="logo-mark"
+        src={LOGO_SRC}
+        alt=""
         width={size}
         height={size}
-        viewBox="0 0 48 48"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
         aria-hidden
-      >
-        <defs>
-          <linearGradient id="skyGrad" x1="8" y1="4" x2="40" y2="44" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#38bdf8" />
-            <stop offset="0.5" stopColor="#6366f1" />
-            <stop offset="1" stopColor="#818cf8" />
-          </linearGradient>
-          <linearGradient id="pathGrad" x1="14" y1="28" x2="34" y2="38" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#e0f2fe" />
-            <stop offset="1" stopColor="#c7d2fe" />
-          </linearGradient>
-        </defs>
-        <rect x="4" y="4" width="40" height="40" rx="12" fill="url(#skyGrad)" opacity="0.15" />
-        <path
-          d="M24 8C16 8 10 14 10 22c0 6 4 11 9 13l5 2 5-2c5-2 9-7 9-13 0-8-6-14-14-14z"
-          fill="url(#skyGrad)"
-        />
-        <path
-          d="M14 30c3-4 7-6 10-6s7 2 10 6"
-          stroke="url(#pathGrad)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-        <circle cx="24" cy="20" r="3" fill="#f0f9ff" opacity="0.9" />
-      </svg>
+      />
       {showText && (
         <div className="logo-text">
           <span className="logo-brand">{brand}</span>

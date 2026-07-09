@@ -594,7 +594,14 @@ def setup_cabinet_routes(app: web.Application, config: Config) -> CabinetAuth:
             app.router.add_get(f"/cabinet/{nested}", _serve_cabinet_spa)
             app.router.add_get(f"/cabinet/{nested}/", _serve_cabinet_spa)
 
-        for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest"):
+        for static_name in (
+            "favicon.png",
+            "logo.png",
+            "apple-touch-icon.png",
+            "pwa-192x192.png",
+            "pwa-512x512.png",
+            "site.webmanifest",
+        ):
             static_path = cabinet_dist / static_name
             if static_path.is_file():
 

@@ -35,7 +35,6 @@ body {
 button,
 a,
 .btn,
-.nav-link,
 .bottom-nav-item,
 .month-btn,
 .plan-card,
@@ -73,12 +72,9 @@ a,
   min-height: var(--touch-min);
 }
 
-/* ─── App layout (mobile) ─── */
+/* ─── App layout ─── */
 @media (max-width: 1023px) {
   .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 25;
     padding-top: calc(10px + var(--safe-top));
     padding-left: calc(16px + var(--safe-left));
     padding-right: calc(16px + var(--safe-right));
@@ -91,18 +87,6 @@ a,
     scroll-padding-bottom: calc(var(--bottom-nav-h) + var(--safe-bottom) + 16px);
   }
 
-  .sidebar {
-    padding-top: var(--safe-top);
-    padding-bottom: var(--safe-bottom);
-    padding-left: var(--safe-left);
-    width: min(var(--sidebar-w), calc(100vw - 48px));
-  }
-
-  .sidebar-backdrop.visible {
-    display: block;
-    touch-action: none;
-  }
-
   .bottom-nav {
     padding: 6px calc(4px + var(--safe-right)) calc(6px + var(--safe-bottom))
       calc(4px + var(--safe-left));
@@ -111,12 +95,9 @@ a,
   }
 
   .bottom-nav-item {
-    flex: 1;
-    min-width: 0;
     min-height: var(--touch-min);
     max-width: 72px;
     padding: 6px 4px;
-    position: relative;
   }
 
   .bottom-nav-item span {
@@ -127,18 +108,6 @@ a,
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
-  }
-
-  .bottom-nav-item.active::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 20px;
-    height: 3px;
-    border-radius: 0 0 3px 3px;
-    background: var(--accent);
   }
 
   html.keyboard-open .bottom-nav {

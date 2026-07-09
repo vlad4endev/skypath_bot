@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
   <meta name="theme-color" content="#0a0e1f" />
-  <link rel="icon" href="/app/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/app/favicon.png" type="image/png" />
   <link rel="apple-touch-icon" href="/app/apple-touch-icon.png" />
   <link rel="manifest" href="/app/site.webmanifest" />
   <title>VPN</title>
@@ -88,23 +88,10 @@
 
     .logo-mark {
       width: 44px; height: 44px;
-      position: relative;
-      display: flex; align-items: center; justify-content: center;
+      object-fit: contain;
+      border-radius: 50%;
       flex-shrink: 0;
-    }
-
-    .logo-mark svg.radar {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%;
-    }
-
-    .logo-s {
-      position: relative; z-index: 1;
-      font-size: 22px; font-weight: 900;
-      color: #fff;
-      letter-spacing: -0.04em;
-      line-height: 1;
-      text-shadow: 0 0 24px rgba(138,156,254,0.5);
+      filter: drop-shadow(0 4px 16px rgba(138,156,254,0.35));
     }
 
     .logo-text {
@@ -294,9 +281,12 @@
       display: flex; align-items: center; justify-content: center;
     }
 
-    .hero-radar .logo-s { font-size: 52px; }
-
-    .hero-radar svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .hero-radar img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 50%;
+    }
 
     /* Status */
     .status-row {
@@ -760,16 +750,7 @@
 <div class="app">
   <header class="header">
     <div class="logo">
-      <div class="logo-mark" aria-hidden="true">
-        <svg class="radar" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="22" cy="22" r="20" stroke="rgba(138,156,254,0.2)" stroke-width="0.75"/>
-          <circle cx="22" cy="22" r="14" stroke="rgba(138,156,254,0.28)" stroke-width="0.75"/>
-          <circle cx="22" cy="22" r="8" stroke="rgba(138,156,254,0.35)" stroke-width="0.75"/>
-          <circle cx="32" cy="14" r="2" fill="rgba(138,156,254,0.7)"/>
-          <circle cx="12" cy="28" r="1.5" fill="rgba(138,156,254,0.45)"/>
-        </svg>
-        <span class="logo-s">S</span>
-      </div>
+      <img class="logo-mark" src="/app/logo.png" alt="" width="44" height="44" aria-hidden="true" />
       <span class="logo-text" id="brandName">SKYFLOW VPN</span>
     </div>
     <div class="avatar" id="userAvatar">?</div>

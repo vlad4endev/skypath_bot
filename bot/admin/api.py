@@ -1204,7 +1204,14 @@ def setup_admin_routes(app: web.Application, config: Config) -> AdminAuth:
         if assets_dir.is_dir():
             app.router.add_static("/admin/assets", assets_dir, show_index=False)
 
-        for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest"):
+        for static_name in (
+            "favicon.png",
+            "logo.png",
+            "apple-touch-icon.png",
+            "pwa-192x192.png",
+            "pwa-512x512.png",
+            "site.webmanifest",
+        ):
             static_path = admin_dist / static_name
             if not static_path.is_file():
                 static_path = admin_dir / "public" / static_name

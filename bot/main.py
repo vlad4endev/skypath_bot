@@ -221,7 +221,15 @@ def create_app(config: Config) -> web.Application:
         if webapp_install.is_file():
             app.router.add_get("/app/install.html", _serve_webapp_install)
 
-        for static_name in ("favicon.svg", "apple-touch-icon.png", "site.webmanifest", "i18n.js"):
+        for static_name in (
+            "favicon.png",
+            "logo.png",
+            "apple-touch-icon.png",
+            "pwa-192x192.png",
+            "pwa-512x512.png",
+            "site.webmanifest",
+            "i18n.js",
+        ):
             static_path = webapp_dir / static_name
             if static_path.is_file():
 

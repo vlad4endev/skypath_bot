@@ -45,7 +45,7 @@ function SidebarContent({
   return (
     <>
       <div className="sidebar-brand">
-        <Logo brand={brand.replace(/\s*VPN\s*$/i, '') || 'SkyPath'} size={36} />
+        <Logo brand={brand.replace(/\s*VPN\s*$/i, '') || 'SKYFLOW'} size={36} />
       </div>
       <nav className="sidebar-nav">
         {nav.map(({ to, icon: Icon, label }) => (
@@ -113,7 +113,7 @@ export function Layout({ onXuiSync }: LayoutProps) {
           {menuOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
         <div className="mobile-topbar__title">
-          <Logo brand="SkyPath" size={28} showText={false} />
+          <Logo brand="SKYFLOW" size={28} showText={false} />
           <span className="mobile-topbar__page">{pageTitle}</span>
         </div>
       </header>

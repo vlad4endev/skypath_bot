@@ -1,44 +1,22 @@
+const LOGO_SRC = '/cabinet/logo.png';
+
 interface LogoProps {
   size?: number;
   showText?: boolean;
   brand?: string;
 }
 
-export function Logo({ size = 40, showText = true, brand = 'SkyPath' }: LogoProps) {
+export function Logo({ size = 40, showText = true, brand = 'SKYFLOW' }: LogoProps) {
   return (
     <div className="logo">
-      <svg
+      <img
         className="logo-mark"
+        src={LOGO_SRC}
+        alt=""
         width={size}
         height={size}
-        viewBox="0 0 48 48"
-        fill="none"
         aria-hidden
-      >
-        <defs>
-          <linearGradient id="cabGrad" x1="8" y1="4" x2="40" y2="44" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#c4ceff" />
-            <stop offset="0.5" stopColor="#8a9cfe" />
-            <stop offset="1" stopColor="#5b6fd6" />
-          </linearGradient>
-        </defs>
-        <rect x="4" y="4" width="40" height="40" rx="12" fill="url(#cabGrad)" opacity="0.15" />
-        <path
-          d="M24 8C16 8 10 14 10 22c0 6 4 11 9 13l5 2 5-2c5-2 9-7 9-13 0-8-6-14-14-14z"
-          fill="url(#cabGrad)"
-        />
-        <text
-          x="24"
-          y="26"
-          textAnchor="middle"
-          fontFamily="Syne, system-ui, sans-serif"
-          fontSize="14"
-          fontWeight="900"
-          fill="#ffffff"
-        >
-          S
-        </text>
-      </svg>
+      />
       {showText && (
         <div className="logo-text">
           <span className="logo-brand">{brand}</span>
